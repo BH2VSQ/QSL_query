@@ -315,7 +315,17 @@
             }
         });
         
-        document.addEventListener('DOMContentLoaded', initDb);
+        document.addEventListener('DOMContentLoaded', async () => {
+            await initDb();
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const qslQuery = urlParams.get('q');
+
+            if (qslQuery) {
+                qslIdInput.value = qslQuery;
+                performSearch();
+            }
+        });
 
     </script>
 </body>
