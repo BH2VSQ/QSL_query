@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QSL 卡片查询</title>
+    <title>QSL 信息查询</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
     <style>
@@ -47,7 +47,7 @@
     <div class="container mx-auto p-4 md:p-8">
         <!-- Header -->
         <header class="flex justify-between items-center mb-8">
-            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">QSL 卡片查询</h1>
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">QSL 信息查询</h1>
             <button id="theme-toggle" class="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900">
                 <svg id="theme-icon-light" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                 <svg id="theme-icon-dark" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
@@ -62,10 +62,21 @@
 
         <!-- Search Section -->
         <div id="search-section" class="mb-8 p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-            <h2 class="text-xl font-semibold mb-4">输入QSL卡号查询您的通联信息</h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">可输入多个QSL卡号，请用英文逗号 (,) 分隔。</p>
+            <h2 class="text-xl font-semibold mb-4">查询通联信息</h2>
+            
+            <div class="flex items-center space-x-4 mb-4">
+                <label class="flex items-center">
+                    <input type="radio" name="search-type" value="qsl" class="form-radio h-4 w-4 text-indigo-600" checked>
+                    <span class="ml-2 text-gray-700 dark:text-gray-300">按QSL卡号查询</span>
+                </label>
+                <label class="flex items-center">
+                    <input type="radio" name="search-type" value="callsign" class="form-radio h-4 w-4 text-indigo-600">
+                    <span class="ml-2 text-gray-700 dark:text-gray-300">按呼号查询</span>
+                </label>
+            </div>
+
             <div class="flex flex-col sm:flex-row gap-4">
-                <input type="text" id="qsl-id-input" placeholder="例如: 24000001TC,24000002RC" class="flex-grow w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                <input type="text" id="qsl-id-input" placeholder="输入QSL卡号, 可用逗号分隔..." class="flex-grow w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
                 <button id="search-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     查询
@@ -89,7 +100,7 @@
         
         <!-- No Results Message -->
         <div id="no-results" class="text-center py-10 hidden">
-             <p class="text-gray-500 dark:text-gray-400">未找到与该QSL卡号相关的日志。</p>
+             <p class="text-gray-500 dark:text-gray-400">未找到任何匹配的记录。</p>
         </div>
 
     </div>
@@ -106,6 +117,7 @@
         const themeToggle = document.getElementById('theme-toggle');
         const themeIconLight = document.getElementById('theme-icon-light');
         const themeIconDark = document.getElementById('theme-icon-dark');
+        const searchTypeRadios = document.querySelectorAll('input[name="search-type"]');
 
         let db;
 
@@ -128,7 +140,6 @@
             applyTheme(isDark);
         });
 
-        // Initialize theme on load
         const savedTheme = localStorage.getItem('theme');
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         applyTheme(savedTheme === 'dark' || (savedTheme === null && prefersDark));
@@ -177,14 +188,11 @@
                 alert('数据库尚未准备就绪，请稍候。');
                 return;
             }
+            
+            const searchType = document.querySelector('input[name="search-type"]:checked').value;
+            const searchInput = qslIdInput.value.trim().toUpperCase();
 
-            const searchTerms = qslIdInput.value.split(',')
-                .map(s => s.trim().toUpperCase())
-                .filter(s => s);
-
-            if (searchTerms.length === 0) {
-                return;
-            }
+            if (!searchInput) return;
 
             loadingIndicator.classList.remove('hidden');
             resultsArea.innerHTML = '';
@@ -193,40 +201,45 @@
             await new Promise(resolve => setTimeout(resolve, 50));
 
             try {
-                const placeholders = searchTerms.map(() => '?').join(',');
-                const query = `
-                    SELECT
-                        q.qsl_id,
-                        q.direction,
-                        l.my_callsign,
-                        l.station_callsign,
-                        l.qso_date,
-                        l.time_on,
-                        l.band,
-                        l.freq,
-                        l.mode,
-                        l.submode,
-                        l.rst_sent,
-                        l.rst_rcvd,
-                        l.comment,
-                        l.sat_name
-                    FROM qsl_cards q
-                    JOIN qsl_log_link ql ON q.qsl_id = ql.qsl_id
-                    JOIN logs l ON ql.log_id = l.id
-                    WHERE UPPER(q.qsl_id) IN (${placeholders})
-                    ORDER BY q.qsl_id, l.qso_date DESC, l.time_on DESC;
-                `;
-                
-                const stmt = db.prepare(query);
-                stmt.bind(searchTerms);
-                
-                const results = [];
-                while (stmt.step()) {
-                    results.push(stmt.getAsObject());
-                }
-                stmt.free();
+                let results = [];
+                let notFoundItems = [];
 
-                displayResults(results);
+                if (searchType === 'qsl') {
+                    const searchTerms = searchInput.split(',').map(s => s.trim()).filter(s => s);
+                    if(searchTerms.length === 0) {
+                        loadingIndicator.classList.add('hidden');
+                        return;
+                    }
+                    const placeholders = searchTerms.map(() => '?').join(',');
+                    const query = `
+                        SELECT q.qsl_id, q.direction, l.*
+                        FROM qsl_cards q
+                        JOIN qsl_log_link ql ON q.qsl_id = ql.qsl_id
+                        JOIN logs l ON ql.log_id = l.id
+                        WHERE UPPER(q.qsl_id) IN (${placeholders})
+                        ORDER BY q.qsl_id, l.qso_date DESC, l.time_on DESC;
+                    `;
+                    const stmt = db.prepare(query);
+                    stmt.bind(searchTerms);
+                    while (stmt.step()) results.push(stmt.getAsObject());
+                    stmt.free();
+                    
+                    const foundQslIds = new Set(results.map(r => r.qsl_id.toUpperCase()));
+                    notFoundItems = searchTerms.filter(term => !foundQslIds.has(term));
+
+                } else if (searchType === 'callsign') {
+                    const query = `
+                        SELECT * FROM logs
+                        WHERE UPPER(station_callsign) = UPPER(?)
+                        ORDER BY qso_date DESC, time_on DESC;
+                    `;
+                    const stmt = db.prepare(query);
+                    stmt.bind([searchInput]);
+                    while (stmt.step()) results.push(stmt.getAsObject());
+                    stmt.free();
+                }
+
+                displayResults(results, notFoundItems, searchType);
 
             } catch (e) {
                 console.error(e);
@@ -236,40 +249,31 @@
             }
         }
 
-        function displayResults(results) {
+        function displayResults(results, notFoundItems, searchType) {
             if (results.length === 0) {
                 noResultsMessage.classList.remove('hidden');
+                if (searchType === 'qsl' && notFoundItems && notFoundItems.length > 0) {
+                    noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">未找到与以下QSL卡号相关的日志:</p><p class="font-mono text-red-500 mt-2">${notFoundItems.join(', ')}</p>`;
+                } else {
+                    noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">未找到任何匹配的记录。</p>`;
+                }
                 return;
             }
-
-            const groupedResults = results.reduce((acc, log) => {
-                if (!acc[log.qsl_id]) {
-                    acc[log.qsl_id] = {
-                        direction: log.direction,
-                        logs: []
-                    };
-                }
-                acc[log.qsl_id].logs.push(log);
-                return acc;
-            }, {});
+            
+            noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">未找到任何匹配的记录。</p>`;
 
             let html = '';
-            for (const qsl_id in groupedResults) {
-                const card = groupedResults[qsl_id];
-                const directionText = card.direction === 'TC' ? '发卡' : '收卡';
-                const directionColor = card.direction === 'TC' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300';
 
+            if (searchType === 'callsign') {
                 html += `
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
                         <div class="p-4 sm:p-6 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${qsl_id}</h3>
-                            <span class="text-xs font-medium px-2.5 py-0.5 rounded ${directionColor}">${directionText}</span>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">与 ${results[0].station_callsign} 的通联记录</h3>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                                 <thead class="bg-gray-50 dark:bg-gray-700/80">
                                     <tr>
-                                        <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">对方呼号</th>
                                         <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">日期 (UTC)</th>
                                         <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">时间 (UTC)</th>
                                         <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">频率 (MHz)</th>
@@ -277,16 +281,18 @@
                                         <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">模式</th>
                                         <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">信号报告 (S/R)</th>
                                         <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">备注</th>
+                                        <th scope="col" class="text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">收卡状态</th>
+                                        <th scope="col" class="text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">发卡状态</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                 `;
-
-                card.logs.forEach((log, index) => {
+                results.forEach((log, index) => {
                     const rowClass = index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50';
+                    const rcvdStatus = log.qsl_rcvd === 'Y' ? '<span class="text-green-500 font-bold">✔</span>' : '<span class="text-red-500">✖</span>';
+                    const sentStatus = log.qsl_sent === 'Y' ? '<span class="text-green-500 font-bold">✔</span>' : '<span class="text-red-500">✖</span>';
                     html += `
                         <tr class="${rowClass}">
-                            <td>${log.station_callsign || 'N/A'}</td>
                             <td>${log.qso_date || 'N/A'}</td>
                             <td>${log.time_on || 'N/A'}</td>
                             <td>${log.freq || 'N/A'}</td>
@@ -294,16 +300,86 @@
                             <td>${log.mode || ''} ${log.submode || ''}</td>
                             <td>${log.rst_sent || 'N/A'} / ${log.rst_rcvd || 'N/A'}</td>
                             <td class="whitespace-normal break-words max-w-xs">${log.comment || ''} ${log.sat_name ? `(卫星: ${log.sat_name})` : ''}</td>
+                            <td class="text-center">${rcvdStatus}</td>
+                            <td class="text-center">${sentStatus}</td>
                         </tr>
                     `;
                 });
+                html += `</tbody></table></div></div>`;
+            } else { // 'qsl' search type
+                const groupedResults = results.reduce((acc, log) => {
+                    const key = log.qsl_id || 'unlinked';
+                    if (!acc[key]) {
+                        acc[key] = {
+                            direction: log.direction,
+                            logs: []
+                        };
+                    }
+                    acc[key].logs.push(log);
+                    return acc;
+                }, {});
 
-                html += `
-                                </tbody>
-                            </table>
+                for (const qsl_id in groupedResults) {
+                    const card = groupedResults[qsl_id];
+                    const isUnlinked = qsl_id === 'unlinked';
+                    const directionText = isUnlinked ? '未关联卡片' : (card.direction === 'TC' ? '已发出' : '已收到');
+                    const directionColor = isUnlinked ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300' : (card.direction === 'TC' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300');
+
+                    html += `
+                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+                            <div class="p-4 sm:p-6 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
+                                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${isUnlinked ? '未关联卡片的日志' : qsl_id}</h3>
+                                <span class="text-xs font-medium px-2.5 py-0.5 rounded ${directionColor}">${directionText}</span>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                    <thead class="bg-gray-50 dark:bg-gray-700/80">
+                                        <tr>
+                                            <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">呼号</th>
+                                            <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">日期 (UTC)</th>
+                                            <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">时间 (UTC)</th>
+                                            <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">频率 (MHz)</th>
+                                            <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">波段</th>
+                                            <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">模式</th>
+                                            <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">信号报告 (S/R)</th>
+                                            <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">备注</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    `;
+
+                    card.logs.forEach((log, index) => {
+                        const rowClass = index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50';
+                        html += `
+                            <tr class="${rowClass}">
+                                <td>${log.station_callsign || 'N/A'}</td>
+                                <td>${log.qso_date || 'N/A'}</td>
+                                <td>${log.time_on || 'N/A'}</td>
+                                <td>${log.freq || 'N/A'}</td>
+                                <td>${log.band || 'N/A'}</td>
+                                <td>${log.mode || ''} ${log.submode || ''}</td>
+                                <td>${log.rst_sent || 'N/A'} / ${log.rst_rcvd || 'N/A'}</td>
+                                <td class="whitespace-normal break-words max-w-xs">${log.comment || ''} ${log.sat_name ? `(卫星: ${log.sat_name})` : ''}</td>
+                            </tr>
+                        `;
+                    });
+
+                    html += `
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                }
+                
+                if (notFoundItems && notFoundItems.length > 0) {
+                    html += `
+                        <div class="mt-8 p-4 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
+                            <p class="font-semibold text-yellow-800 dark:text-yellow-300">以下QSL卡号未找到:</p>
+                            <p class="font-mono text-yellow-700 dark:text-yellow-400 mt-1">${notFoundItems.join(', ')}</p>
+                        </div>
+                    `;
+                }
             }
             resultsArea.innerHTML = html;
         }
@@ -315,14 +391,34 @@
             }
         });
         
+        searchTypeRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.value === 'qsl') {
+                    qslIdInput.placeholder = "输入QSL卡号, 可用逗号分隔...";
+                } else {
+                    qslIdInput.placeholder = "输入呼号...";
+                }
+                qslIdInput.value = ''; // 清空输入框
+                resultsArea.innerHTML = ''; // 清空结果
+                noResultsMessage.classList.add('hidden');
+            });
+        });
+
         document.addEventListener('DOMContentLoaded', async () => {
             await initDb();
             
             const urlParams = new URLSearchParams(window.location.search);
             const qslQuery = urlParams.get('q');
+            const callsignQuery = urlParams.get('c'); // 使用 'c' 作为呼号查询参数
 
             if (qslQuery) {
+                document.querySelector('input[name="search-type"][value="qsl"]').checked = true;
                 qslIdInput.value = qslQuery;
+                performSearch();
+            } else if (callsignQuery) {
+                document.querySelector('input[name="search-type"][value="callsign"]').checked = true;
+                qslIdInput.value = callsignQuery;
+                qslIdInput.dispatchEvent(new Event('change')); // 触发change事件以更新placeholder
                 performSearch();
             }
         });
