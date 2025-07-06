@@ -246,6 +246,7 @@
                 alert(`查询时发生错误: ${e.message}`);
             } finally {
                 loadingIndicator.classList.add('hidden');
+                qslIdInput.value = ''; // 清空输入框
             }
         }
 
@@ -399,8 +400,6 @@
                     qslIdInput.placeholder = "输入呼号...";
                 }
                 qslIdInput.value = ''; // 清空输入框
-                resultsArea.innerHTML = ''; // 清空结果
-                noResultsMessage.classList.add('hidden');
             });
         });
 
@@ -409,17 +408,20 @@
             
             const urlParams = new URLSearchParams(window.location.search);
             const qslQuery = urlParams.get('q');
-            const callsignQuery = urlParams.get('c'); // 使用 'c' 作为呼号查询参数
+            const callsignQuery = urlParams.get('c');
 
             if (qslQuery) {
                 document.querySelector('input[name="search-type"][value="qsl"]').checked = true;
+                qslIdInput.placeholder = "输入QSL卡号, 可用逗号分隔...";
                 qslIdInput.value = qslQuery;
-                performSearch();
+                await performSearch();
+                history.pushState(null, '', window.location.pathname);
             } else if (callsignQuery) {
                 document.querySelector('input[name="search-type"][value="callsign"]').checked = true;
+                qslIdInput.placeholder = "输入呼号...";
                 qslIdInput.value = callsignQuery;
-                qslIdInput.dispatchEvent(new Event('change')); // 触发change事件以更新placeholder
-                performSearch();
+                await performSearch();
+                history.pushState(null, '', window.location.pathname);
             }
         });
 
