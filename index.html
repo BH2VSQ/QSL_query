@@ -76,7 +76,7 @@
             </div>
 
             <div class="flex flex-col sm:flex-row gap-4">
-                <input type="text" id="qsl-id-input" placeholder="输入QSL卡号, 可用逗号分隔..." class="flex-grow w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
+                <input type="text" id="qsl-id-input" placeholder="输入QSL卡号(或前缀), 可用逗号分隔..." class="flex-grow w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
                 <button id="search-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     查询
@@ -210,22 +210,35 @@
                         loadingIndicator.classList.add('hidden');
                         return;
                     }
-                    const placeholders = searchTerms.map(() => '?').join(',');
+                    
+                    // 修改为模糊搜索 (前缀匹配)
+                    // 使用 OR 连接多个 LIKE 条件: qsl_id LIKE 'PREFIX1%' OR qsl_id LIKE 'PREFIX2%' ...
+                    const whereConditions = searchTerms.map(() => "UPPER(q.qsl_id) LIKE ?").join(' OR ');
+                    
                     const query = `
                         SELECT q.qsl_id, q.direction, l.*
                         FROM qsl_cards q
                         JOIN qsl_log_link ql ON q.qsl_id = ql.qsl_id
                         JOIN logs l ON ql.log_id = l.id
-                        WHERE UPPER(q.qsl_id) IN (${placeholders})
+                        WHERE ${whereConditions}
                         ORDER BY q.qsl_id, l.qso_date DESC, l.time_on DESC;
                     `;
+                    
                     const stmt = db.prepare(query);
-                    stmt.bind(searchTerms);
+                    
+                    // 为每个搜索词添加 '%' 通配符以实现前缀匹配
+                    const bindParams = searchTerms.map(term => term + '%');
+                    stmt.bind(bindParams);
+                    
                     while (stmt.step()) results.push(stmt.getAsObject());
                     stmt.free();
                     
-                    const foundQslIds = new Set(results.map(r => r.qsl_id.toUpperCase()));
-                    notFoundItems = searchTerms.filter(term => !foundQslIds.has(term));
+                    // 更新未找到项目的逻辑
+                    // 检查搜索词是否是结果中任何 QSL ID 的前缀
+                    const foundQslIds = results.map(r => r.qsl_id.toUpperCase());
+                    notFoundItems = searchTerms.filter(term => {
+                        return !foundQslIds.some(foundId => foundId.startsWith(term));
+                    });
 
                 } else if (searchType === 'callsign') {
                     const query = `
@@ -254,7 +267,7 @@
             if (results.length === 0) {
                 noResultsMessage.classList.remove('hidden');
                 if (searchType === 'qsl' && notFoundItems && notFoundItems.length > 0) {
-                    noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">未找到与以下QSL卡号相关的日志:</p><p class="font-mono text-red-500 mt-2">${notFoundItems.join(', ')}</p>`;
+                    noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">未找到与以下QSL卡号(或前缀)相关的日志:</p><p class="font-mono text-red-500 mt-2">${notFoundItems.join(', ')}</p>`;
                 } else {
                     noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">未找到任何匹配的记录。</p>`;
                 }
@@ -376,7 +389,7 @@
                 if (notFoundItems && notFoundItems.length > 0) {
                     html += `
                         <div class="mt-8 p-4 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
-                            <p class="font-semibold text-yellow-800 dark:text-yellow-300">以下QSL卡号未找到:</p>
+                            <p class="font-semibold text-yellow-800 dark:text-yellow-300">以下QSL卡号(或前缀)未找到:</p>
                             <p class="font-mono text-yellow-700 dark:text-yellow-400 mt-1">${notFoundItems.join(', ')}</p>
                         </div>
                     `;
@@ -395,7 +408,7 @@
         searchTypeRadios.forEach(radio => {
             radio.addEventListener('change', (e) => {
                 if (e.target.value === 'qsl') {
-                    qslIdInput.placeholder = "输入QSL卡号, 可用逗号分隔...";
+                    qslIdInput.placeholder = "输入QSL卡号(或前缀), 可用逗号分隔...";
                 } else {
                     qslIdInput.placeholder = "输入呼号...";
                 }
@@ -412,7 +425,7 @@
 
             if (qslQuery) {
                 document.querySelector('input[name="search-type"][value="qsl"]').checked = true;
-                qslIdInput.placeholder = "输入QSL卡号, 可用逗号分隔...";
+                qslIdInput.placeholder = "输入QSL卡号(或前缀), 可用逗号分隔...";
                 qslIdInput.value = qslQuery;
                 await performSearch();
                 history.pushState(null, '', window.location.pathname);
