@@ -31,7 +31,8 @@
             background: #9ca3af; /* light:bg-gray-400 */
         }
         td, th {
-            padding: 0.75rem 1rem;
+            /* 缩小边距：垂直从 0.75rem 减到 0.5rem，水平从 1rem 减到 0.75rem */
+            padding: 0.5rem 0.75rem; 
             white-space: nowrap;
         }
         /* 确保 Tooltip 在表格上方显示 */
@@ -282,7 +283,7 @@
             const formattedDate = formatDate(dateStr);
             
             let displayId = 'N/A';
-            let tooltipContent = ''; // 用于存储分隔后的 HTML 内容
+            let tooltipContent = ''; 
 
             // 仅在有 QSL ID 关联时处理
             if (linkedQslIds) {
@@ -317,9 +318,9 @@
             return `
                 <div class="group relative inline-flex justify-center items-center cursor-help">
                     <span class="text-green-500 font-bold">✔</span>
-                    <div class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-300 absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded py-1 px-2 z-50 shadow-lg pointer-events-none border border-gray-700 text-center max-w-min">
+                    <div class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-300 absolute right-full mr-2 top-1/2 transform -translate-y-1/2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded py-1 px-2 z-50 shadow-lg pointer-events-none border border-gray-700 text-center max-w-min">
                         ${tooltipContent}
-                        <div class="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                        <div class="absolute left-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-l-gray-900 dark:border-l-gray-700"></div>
                     </div>
                 </div>
             `;
@@ -348,7 +349,7 @@
                             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">与 ${results[0].station_callsign} 的通联记录</h3>
                         </div>
                         <div class="overflow-x-auto pb-4">
-                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <table class="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
                                 <thead class="bg-gray-50 dark:bg-gray-700/80">
                                     <tr>
                                         <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">日期 (UTC)</th>
@@ -432,7 +433,7 @@
                                 <span class="text-xs font-medium px-2.5 py-0.5 rounded ${directionColor}">${directionText}</span>
                             </div>
                             <div class="overflow-x-auto">
-                                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                <table class="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
                                     <thead class="bg-gray-50 dark:bg-gray-700/80">
                                         <tr>
                                             <th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">呼号</th>
