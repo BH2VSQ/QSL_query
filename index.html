@@ -34,6 +34,10 @@
             padding: 0.75rem 1rem;
             white-space: nowrap;
         }
+        /* 确保 Tooltip 在表格上方显示 */
+        .tooltip-container {
+            position: relative;
+        }
     </style>
     <script>
         // Tailwind CSS dark mode configuration
@@ -45,7 +49,6 @@
 <body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-sans transition-colors duration-300">
 
     <div class="container mx-auto p-4 md:p-8">
-        <!-- Header -->
         <header class="flex justify-between items-center mb-8">
             <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">QSL 信息查询</h1>
             <button id="theme-toggle" class="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900">
@@ -54,13 +57,11 @@
             </button>
         </header>
 
-        <!-- Status Message -->
         <div id="status-message" class="mb-6 p-4 bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 rounded-lg shadow-md hidden">
              <p id="status-text"></p>
         </div>
 
 
-        <!-- Search Section -->
         <div id="search-section" class="mb-8 p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
             <h2 class="text-xl font-semibold mb-4">查询通联信息</h2>
             
@@ -84,7 +85,6 @@
             </div>
         </div>
         
-        <!-- Loading Spinner -->
         <div id="loading" class="text-center py-10 hidden">
             <svg class="animate-spin h-8 w-8 text-indigo-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -93,12 +93,9 @@
             <p class="mt-2 text-gray-600 dark:text-gray-400">正在查询...</p>
         </div>
 
-        <!-- Results Area -->
         <div id="results-area" class="space-y-6">
-            <!-- Results will be injected here -->
-        </div>
+            </div>
         
-        <!-- No Results Message -->
         <div id="no-results" class="text-center py-10 hidden">
              <p class="text-gray-500 dark:text-gray-400">未找到任何匹配的记录。</p>
         </div>
@@ -211,8 +208,6 @@
                         return;
                     }
                     
-                    // 修改为模糊搜索 (前缀匹配)
-                    // 使用 OR 连接多个 LIKE 条件: qsl_id LIKE 'PREFIX1%' OR qsl_id LIKE 'PREFIX2%' ...
                     const whereConditions = searchTerms.map(() => "UPPER(q.qsl_id) LIKE ?").join(' OR ');
                     
                     const query = `
@@ -226,15 +221,12 @@
                     
                     const stmt = db.prepare(query);
                     
-                    // 为每个搜索词添加 '%' 通配符以实现前缀匹配
                     const bindParams = searchTerms.map(term => term + '%');
                     stmt.bind(bindParams);
                     
                     while (stmt.step()) results.push(stmt.getAsObject());
                     stmt.free();
                     
-                    // 更新未找到项目的逻辑
-                    // 检查搜索词是否是结果中任何 QSL ID 的前缀
                     const foundQslIds = results.map(r => r.qsl_id.toUpperCase());
                     notFoundItems = searchTerms.filter(term => {
                         return !foundQslIds.some(foundId => foundId.startsWith(term));
@@ -242,9 +234,21 @@
 
                 } else if (searchType === 'callsign') {
                     const query = `
-                        SELECT * FROM logs
-                        WHERE UPPER(station_callsign) = UPPER(?)
-                        ORDER BY qso_date DESC, time_on DESC;
+                        SELECT 
+                            l.*, 
+                            GROUP_CONCAT(q.qsl_id) AS linked_qsl_ids 
+                        FROM 
+                            logs l
+                        LEFT JOIN 
+                            qsl_log_link ql ON l.id = ql.log_id
+                        LEFT JOIN
+                            qsl_cards q ON ql.qsl_id = q.qsl_id
+                        WHERE 
+                            UPPER(l.station_callsign) = UPPER(?)
+                        GROUP BY
+                            l.id
+                        ORDER BY 
+                            l.qso_date DESC, l.time_on DESC;
                     `;
                     const stmt = db.prepare(query);
                     stmt.bind([searchInput]);
@@ -262,6 +266,65 @@
                 qslIdInput.value = ''; // 清空输入框
             }
         }
+
+        // --- Helper Function: Format YYYYMMDD to YYYY-MM-DD ---
+        function formatDate(dateStr) {
+            if (!dateStr || dateStr.length !== 8) return dateStr;
+            return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+        }
+
+        // --- Helper Function: Create Status Badge with Tooltip (Enhanced for Callsign Search) ---
+        function createStatusBadge(status, dateStr, linkedQslIds, direction) {
+            if (status !== 'Y') {
+                return '<span class="text-red-500">✖</span>';
+            }
+
+            const formattedDate = formatDate(dateStr);
+            
+            let displayId = 'N/A';
+            let tooltipContent = ''; // 用于存储分隔后的 HTML 内容
+
+            // 仅在有 QSL ID 关联时处理
+            if (linkedQslIds) {
+                const directionPrefix = direction === 'SENT' ? 'TC' : 'RC';
+                const qslIdList = linkedQslIds.split(',');
+                
+                let relevantQslId = qslIdList.find(id => id.includes(directionPrefix));
+
+                if (relevantQslId) {
+                    const index = relevantQslId.indexOf(directionPrefix);
+                    if (index !== -1) {
+                        // 截取到 TC/RC 结束，排除后面的唯一哈希码
+                        displayId = relevantQslId.substring(0, index + directionPrefix.length);
+                    } else {
+                        // 兜底：如果格式不匹配，直接使用完整ID
+                        displayId = relevantQslId;
+                    }
+                }
+            }
+            
+            // 构造气泡文本为两行 <div> 元素
+            if (displayId !== 'N/A') {
+                tooltipContent += `<div class="font-bold">QSL ID: ${displayId}</div>`;
+            }
+            if (formattedDate) {
+                // 如果 QSL ID 存在，添加一个微小的上边距分隔两行
+                const mtClass = displayId !== 'N/A' ? 'mt-0.5' : '';
+                tooltipContent += `<div class="${mtClass}">时间: ${formattedDate}</div>`;
+            }
+
+
+            return `
+                <div class="group relative inline-flex justify-center items-center cursor-help">
+                    <span class="text-green-500 font-bold">✔</span>
+                    <div class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-300 absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded py-1 px-2 z-50 shadow-lg pointer-events-none border border-gray-700 text-center max-w-min">
+                        ${tooltipContent}
+                        <div class="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                    </div>
+                </div>
+            `;
+        }
+
 
         function displayResults(results, notFoundItems, searchType) {
             if (results.length === 0) {
@@ -284,7 +347,7 @@
                         <div class="p-4 sm:p-6 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">与 ${results[0].station_callsign} 的通联记录</h3>
                         </div>
-                        <div class="overflow-x-auto">
+                        <div class="overflow-x-auto pb-4">
                             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                                 <thead class="bg-gray-50 dark:bg-gray-700/80">
                                     <tr>
@@ -303,8 +366,10 @@
                 `;
                 results.forEach((log, index) => {
                     const rowClass = index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50';
-                    const rcvdStatus = log.qsl_rcvd === 'Y' ? '<span class="text-green-500 font-bold">✔</span>' : '<span class="text-red-500">✖</span>';
-                    const sentStatus = log.qsl_sent === 'Y' ? '<span class="text-green-500 font-bold">✔</span>' : '<span class="text-red-500">✖</span>';
+                    
+                    const rcvdStatus = createStatusBadge(log.qsl_rcvd, log.qsl_rcvd_date, log.linked_qsl_ids, 'RCVD');
+                    const sentStatus = createStatusBadge(log.qsl_sent, log.qsl_sent_date, log.linked_qsl_ids, 'SENT');
+
                     html += `
                         <tr class="${rowClass}">
                             <td>${log.qso_date || 'N/A'}</td>
@@ -314,13 +379,13 @@
                             <td>${log.mode || ''} ${log.submode || ''}</td>
                             <td>${log.rst_sent || 'N/A'} / ${log.rst_rcvd || 'N/A'}</td>
                             <td class="whitespace-normal break-words max-w-xs">${log.comment || ''} ${log.sat_name ? `(卫星: ${log.sat_name})` : ''}</td>
-                            <td class="text-center">${rcvdStatus}</td>
-                            <td class="text-center">${sentStatus}</td>
+                            <td class="text-center overflow-visible relative">${rcvdStatus}</td>
+                            <td class="text-center overflow-visible relative">${sentStatus}</td>
                         </tr>
                     `;
                 });
                 html += `</tbody></table></div></div>`;
-            } else { // 'qsl' search type
+            } else { // 'qsl' search type (QSL ID search - logic from previous turn)
                 const groupedResults = results.reduce((acc, log) => {
                     const key = log.qsl_id || 'unlinked';
                     if (!acc[key]) {
@@ -336,7 +401,28 @@
                 for (const qsl_id in groupedResults) {
                     const card = groupedResults[qsl_id];
                     const isUnlinked = qsl_id === 'unlinked';
-                    const directionText = isUnlinked ? '未关联卡片' : (card.direction === 'TC' ? '已发出' : '已收到');
+                    
+                    let directionText = '';
+                    if (isUnlinked) {
+                        directionText = '未关联卡片';
+                    } else {
+                        const isTC = card.direction === 'TC';
+                        const status = isTC ? '已发出' : '已收到';
+                        
+                        let dateStr = '';
+                        if (card.logs && card.logs.length > 0) {
+                             const log = card.logs[0];
+                             dateStr = isTC ? (log.qsl_sent_date || '') : (log.qsl_rcvd_date || '');
+                        }
+                        
+                        const formattedDate = formatDate(dateStr);
+                        if (formattedDate) {
+                            directionText = `${formattedDate} - ${status}`;
+                        } else {
+                            directionText = status;
+                        }
+                    }
+
                     const directionColor = isUnlinked ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300' : (card.direction === 'TC' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300');
 
                     html += `
