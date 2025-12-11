@@ -1,7 +1,7 @@
 pause
 git add *
 pause
-git add*
+git add *
 pause
 git commit -m "update"
 pause

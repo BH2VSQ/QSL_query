@@ -221,7 +221,8 @@
                 // 强制重新执行查询以更新所有动态文本，但先保存当前的搜索内容
                 const searchInput = qslIdInput.value.trim().toUpperCase();
                 if(searchInput) {
-                    performSearch(searchInput, searchType, true); // 传递 true 跳过清空输入框
+                    // 使用 qslIdInput.value 作为原始输入
+                    performSearch(qslIdInput.value, searchType, true); 
                 } else {
                     // 如果结果区域不为空但输入框为空，说明是 QSL ID 历史查询。这里不重新搜索，只等下次查询。
                     resultsArea.innerHTML = '';
@@ -299,6 +300,7 @@
         }
 
         // --- Search Logic ---
+        // 增加 input 和 type 参数，以便在语言切换时可以重新执行查询
         async function performSearch(input, type, keepInput = false) {
             if (!db) {
                 alert('数据库尚未准备就绪，请稍候。');
@@ -307,7 +309,8 @@
             
             const t = TRANSLATIONS[currentLang];
             const searchType = type || document.querySelector('input[name="search-type"]:checked').value;
-            const searchInput = input || qslIdInput.value.trim().toUpperCase();
+            // 确保使用传入的 input 或当前输入框的值
+            const searchInput = (input || qslIdInput.value).trim().toUpperCase();
 
             if (!searchInput) return;
 
@@ -353,6 +356,14 @@
                     });
 
                 } else if (searchType === 'callsign') {
+                    // --- 呼号模糊搜索逻辑修改 ---
+                    // 1. 提取基准呼号 (Base Callsign)
+                    let baseCallsign = searchInput;
+                    const slashIndex = searchInput.indexOf('/');
+                    if (slashIndex !== -1) {
+                        baseCallsign = searchInput.substring(0, slashIndex);
+                    }
+                    
                     const query = `
                         SELECT 
                             l.*, 
@@ -364,14 +375,18 @@
                         LEFT JOIN
                             qsl_cards q ON ql.qsl_id = q.qsl_id
                         WHERE 
-                            UPPER(l.station_callsign) = UPPER(?)
+                            -- 匹配基准呼号本身 (如: JE6WUD)
+                            UPPER(l.station_callsign) = UPPER(?) 
+                            -- 匹配所有带斜线后缀的呼号 (如: JE6WUD/4, JE6WUD/P)
+                            OR UPPER(l.station_callsign) LIKE UPPER(? || '/%')
                         GROUP BY
                             l.id
                         ORDER BY 
                             l.qso_date DESC, l.time_on DESC;
                     `;
                     const stmt = db.prepare(query);
-                    stmt.bind([searchInput]);
+                    // 绑定两次基准呼号
+                    stmt.bind([baseCallsign, baseCallsign]);
                     while (stmt.step()) results.push(stmt.getAsObject());
                     stmt.free();
                 }
@@ -384,7 +399,7 @@
             } finally {
                 loadingIndicator.classList.add('hidden');
                 if (!keepInput) {
-                     qslIdInput.value = ''; // 清空输入框，除非 keepInput 为 true
+                     qslIdInput.value = ''; // 清空输入框，除非 keepInput 为 true (用于语言切换)
                 }
             }
         }
@@ -469,10 +484,13 @@
             if (searchType === 'callsign') {
                 const columns = t.CALLSIGN_LOG_COLUMNS;
                 
+                // 使用实际查询到的呼号作为标题
+                const displayCallsign = results.length > 0 ? results[0].station_callsign : qslIdInput.value.trim().toUpperCase();
+
                 html += `
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
                         <div class="p-4 sm:p-6 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${t.CALLSIGN_RESULT_TITLE(results[0].station_callsign)}</h3>
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${t.CALLSIGN_RESULT_TITLE(displayCallsign)}</h3>
                         </div>
                         <div class="overflow-x-auto pb-4">
                             <table class="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
