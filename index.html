@@ -147,6 +147,8 @@
                 UNLINKED_CARD: '未关联卡片',
                 SENT_STATUS: '已发出',
                 RECEIVED_STATUS: '已收到',
+                PENDING_OUT_STATUS: '待出库',
+                PENDING_IN_STATUS: '待入库',
                 TOOLTIP_QSL_ID: 'QSL ID:',
                 TOOLTIP_TIME: '时间:',
                 CALLSIGN_RESULT_TITLE: (callsign) => `与 ${callsign} 的通联记录`,
@@ -173,6 +175,8 @@
                 UNLINKED_CARD: 'Unlinked Card',
                 SENT_STATUS: 'Sent',
                 RECEIVED_STATUS: 'Received',
+                PENDING_OUT_STATUS: 'Pending (Out)',
+                PENDING_IN_STATUS: 'Pending (In)',
                 TOOLTIP_QSL_ID: 'QSL ID:',
                 TOOLTIP_TIME: 'Time:',
                 CALLSIGN_RESULT_TITLE: (callsign) => `QSO Records for ${callsign}`,
@@ -334,7 +338,7 @@
                     const whereConditions = searchTerms.map(() => "UPPER(q.qsl_id) LIKE ?").join(' OR ');
                     
                     const query = `
-                        SELECT q.qsl_id, q.direction, l.*
+                        SELECT q.qsl_id, q.direction, q.status, l.*
                         FROM qsl_cards q
                         JOIN qsl_log_link ql ON q.qsl_id = ql.qsl_id
                         JOIN logs l ON ql.log_id = l.id
@@ -418,9 +422,11 @@
 
             const t = TRANSLATIONS[currentLang];
             const formattedDate = formatDate(dateStr);
-            
+            // 已发/已收但没有日期，说明卡片已分配但尚未出入库（待出库/待入库）
+            const isPending = !formattedDate;
+
             let displayId = 'N/A';
-            let tooltipContent = ''; 
+            let tooltipContent = '';
 
             // 仅在有 QSL ID 关联时处理
             if (linkedQslIds) {
@@ -445,16 +451,25 @@
             if (displayId !== 'N/A') {
                 tooltipContent += `<div class="font-bold">${t.TOOLTIP_QSL_ID} ${displayId}</div>`;
             }
-            if (formattedDate) {
+            if (isPending) {
+                // 待出库/待入库：显示状态标签，而非（不存在的）时间
+                const pendingLabel = direction === 'SENT' ? t.PENDING_OUT_STATUS : t.PENDING_IN_STATUS;
+                const mtClass = displayId !== 'N/A' ? 'mt-0.5' : '';
+                tooltipContent += `<div class="${mtClass}">${pendingLabel}</div>`;
+            } else if (formattedDate) {
                 // 如果 QSL ID 存在，添加一个微小的上边距分隔两行
                 const mtClass = displayId !== 'N/A' ? 'mt-0.5' : '';
                 tooltipContent += `<div class="${mtClass}">${t.TOOLTIP_TIME} ${formattedDate}</div>`;
             }
 
+            // 待出库/待入库：黄色圆圈；已发出/已收到：绿色对勾
+            const indicator = isPending
+                ? '<span class="inline-block w-3.5 h-3.5 rounded-full bg-yellow-400 dark:bg-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-800"></span>'
+                : '<span class="text-green-500 font-bold">✔</span>';
 
             return `
                 <div class="group relative inline-flex justify-center items-center cursor-help">
-                    <span class="text-green-500 font-bold">✔</span>
+                    ${indicator}
                     <div class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-300 absolute right-full mr-2 top-1/2 transform -translate-y-1/2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded py-1 px-2 z-50 shadow-lg pointer-events-none border border-gray-700 text-center max-w-min">
                         ${tooltipContent}
                         <div class="absolute left-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-l-gray-900 dark:border-l-gray-700"></div>
@@ -530,6 +545,7 @@
                     if (!acc[key]) {
                         acc[key] = {
                             direction: log.direction,
+                            status: log.status,
                             logs: []
                         };
                     }
@@ -542,12 +558,21 @@
                     const isUnlinked = qsl_id === 'unlinked';
                     
                     let directionText = '';
+                    let statusCircle = '';
                     if (isUnlinked) {
                         directionText = t.UNLINKED_CARD;
                     } else {
                         const isTC = card.direction === 'TC';
-                        const status = isTC ? t.SENT_STATUS : t.RECEIVED_STATUS;
-                        
+                        const isPending = card.status === 'pending';
+                        const status = isTC
+                            ? (isPending ? t.PENDING_OUT_STATUS : t.SENT_STATUS)
+                            : (isPending ? t.PENDING_IN_STATUS : t.RECEIVED_STATUS);
+
+                        // 发卡待出库（收卡待入库）状态显示黄色圆圈
+                        if (isPending) {
+                            statusCircle = '<span class="inline-block w-2.5 h-2.5 rounded-full bg-yellow-400 dark:bg-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-800"></span>';
+                        }
+
                         let dateStr = '';
                         if (card.logs && card.logs.length > 0) {
                              const log = card.logs[0];
@@ -562,13 +587,19 @@
                         }
                     }
 
-                    const directionColor = isUnlinked ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300' : (card.direction === 'TC' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300');
+                    const directionColor = isUnlinked
+                        ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300'
+                        : (card.status === 'pending'
+                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
+                            : (card.direction === 'TC'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
+                                : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'));
 
                     html += `
                         <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
                             <div class="p-4 sm:p-6 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${isUnlinked ? t.UNLINKED_CARD : qsl_id}</h3>
-                                <span class="text-xs font-medium px-2.5 py-0.5 rounded ${directionColor}">${directionText}</span>
+                                <span class="text-xs font-medium px-2.5 py-0.5 rounded inline-flex items-center gap-1.5 ${directionColor}">${statusCircle}${directionText}</span>
                             </div>
                             <div class="overflow-x-auto">
                                 <table class="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
