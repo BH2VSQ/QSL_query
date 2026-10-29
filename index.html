@@ -1,698 +1,962 @@
 <!DOCTYPE html>
-<html lang="zh" class="dark">
+<html lang="zh-CN" class="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QSL 信息查询</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
-    <style>
-        /* Custom scrollbar for a more modern look */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #1f2937; /* dark:bg-gray-800 */
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #4b5563; /* dark:bg-gray-600 */
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #6b7280; /* dark:bg-gray-500 */
-        }
-        html.light ::-webkit-scrollbar-track {
-            background: #f3f4f6; /* light:bg-gray-100 */
-        }
-        html.light ::-webkit-scrollbar-thumb {
-            background: #d1d5db; /* light:bg-gray-300 */
-        }
-        html.light ::-webkit-scrollbar-thumb:hover {
-            background: #9ca3af; /* light:bg-gray-400 */
-        }
-        td, th {
-            /* 缩小边距：垂直从 0.75rem 减到 0.5rem，水平从 1rem 减到 0.75rem */
-            padding: 0.5rem 0.75rem; 
-            white-space: nowrap;
-        }
-        /* 确保 Tooltip 在表格上方显示 */
-        .tooltip-container {
-            position: relative;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="description" content="快速查询 QSL 卡号、卡号前缀与业余无线电通联记录。">
+  <title>QSL Query · QSL 信息查询</title>
+  <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // Tailwind CSS dark mode configuration
-        tailwind.config = {
-            darkMode: 'class',
-        }
-    </script>
+    tailwind.config = { darkMode: 'class' };
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f7f9fc;
+      --surface: rgba(255,255,255,.84);
+      --surface-solid: #fff;
+      --text: #172033;
+      --muted: #778198;
+      --line: rgba(117,132,160,.22);
+      --accent: #5268f4;
+      --accent-2: #8b5cf6;
+      --shadow: 0 24px 70px rgba(32,48,90,.11);
+      --soft-shadow: 0 12px 36px rgba(32,48,90,.08);
+    }
+    html.dark {
+      color-scheme: dark;
+      --page: #0b1020;
+      --surface: rgba(19,27,48,.82);
+      --surface-solid: #131b30;
+      --text: #edf2ff;
+      --muted: #98a4bd;
+      --line: rgba(151,166,204,.16);
+      --accent: #91a2ff;
+      --accent-2: #c4a3ff;
+      --shadow: 0 24px 70px rgba(0,0,0,.26);
+      --soft-shadow: 0 12px 36px rgba(0,0,0,.18);
+    }
+    * { box-sizing: border-box; }
+    html { min-height: 100%; scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse at 12% 11%, rgba(115,139,255,.14), transparent 30rem),
+        radial-gradient(ellipse at 88% 21%, rgba(191,132,255,.12), transparent 29rem),
+        var(--page);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      transition: background-color .28s ease, color .28s ease;
+    }
+    body::before {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      content: "";
+      opacity: .22;
+      background-image: radial-gradient(rgba(125,145,190,.45) .7px, transparent .7px);
+      background-size: 22px 22px;
+      mask-image: linear-gradient(to bottom, black, transparent 75%);
+    }
+    ::selection { color: white; background: #6577ed; }
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(125,140,171,.42); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(125,140,171,.65); }
+
+    .page-shell { width: min(1320px, calc(100% - 48px)); margin: 0 auto; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:26px 0 18px; }
+    .brand { display:inline-flex; align-items:center; gap:12px; min-width:0; color:var(--text); text-decoration:none; }
+    .brand-mark {
+      display:grid; place-items:center; width:42px; height:42px; flex:none; border-radius:14px;
+      color:#fff; background:linear-gradient(145deg,#687cf8,#9b6cf2); box-shadow:0 8px 22px rgba(95,112,238,.28);
+    }
+    .brand-name { font-size:16px; line-height:1.2; font-weight:800; letter-spacing:.12em; }
+    .brand-subtitle { margin-top:4px; font-size:11px; color:var(--muted); letter-spacing:.035em; }
+    .topbar-actions { display:flex; align-items:center; gap:8px; }
+    .utility-button {
+      display:inline-flex; align-items:center; justify-content:center; gap:8px; min-width:42px; height:42px; padding:0 12px;
+      border:1px solid var(--line); border-radius:14px; color:var(--muted); background:var(--surface);
+      backdrop-filter: blur(14px); transition:transform .18s ease, border-color .18s ease, color .18s ease, background .18s ease;
+    }
+    .utility-button:hover { transform:translateY(-1px); color:var(--text); border-color:rgba(117,132,255,.42); }
+    .utility-button:focus-visible, .search-button:focus-visible, .clear-button:focus-visible, .search-input:focus-visible { outline:3px solid rgba(106,125,255,.35); outline-offset:3px; }
+    .status-pill { display:inline-flex; align-items:center; gap:8px; max-width:220px; font-size:11px; color:var(--muted); white-space:nowrap; }
+    .status-dot { width:7px; height:7px; border-radius:50%; flex:none; background:#94a3b8; box-shadow:0 0 0 4px rgba(148,163,184,.12); }
+    .status--success .status-dot { background:#34d399; box-shadow:0 0 0 4px rgba(52,211,153,.13); }
+    .status--info .status-dot { background:#fbbf24; box-shadow:0 0 0 4px rgba(251,191,36,.13); }
+    .status--error .status-dot { background:#fb7185; box-shadow:0 0 0 4px rgba(251,113,133,.13); }
+    #status-message { display:inline-flex; align-items:center; min-width:0; }
+    #status-text { overflow:hidden; text-overflow:ellipsis; }
+
+    .hero {
+      min-height: min(710px, calc(100svh - 104px));
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      padding:42px 0 90px; text-align:center; position:relative; isolation:isolate;
+    }
+    .hero-orb { position:absolute; z-index:-1; border-radius:50%; filter:blur(1px); pointer-events:none; animation:float 9s ease-in-out infinite; }
+    .hero-orb.orb-a { width:180px; height:180px; top:13%; left:8%; background:radial-gradient(circle at 35% 35%,rgba(107,130,255,.15),rgba(107,130,255,0) 70%); }
+    .hero-orb.orb-b { width:240px; height:240px; right:4%; bottom:15%; background:radial-gradient(circle at 45% 45%,rgba(184,130,255,.14),rgba(184,130,255,0) 70%); animation-delay:-4s; }
+    @keyframes float { 0%,100% { transform:translate3d(0,0,0); } 50% { transform:translate3d(0,-13px,0); } }
+    .eyebrow {
+      display:inline-flex; align-items:center; gap:9px; padding:8px 13px; margin-bottom:23px; border:1px solid var(--line); border-radius:999px;
+      color:var(--muted); background:var(--surface); font-size:10px; line-height:1; font-weight:800; letter-spacing:.18em;
+      box-shadow:0 6px 20px rgba(30,50,100,.035); backdrop-filter:blur(12px);
+    }
+    .eyebrow-mark { width:6px; height:6px; border-radius:50%; background:linear-gradient(135deg,#6785ff,#b08cff); box-shadow:0 0 0 4px rgba(117,133,255,.11); }
+    .hero-title { max-width:850px; margin:0; font-size:clamp(38px,6.3vw,68px); line-height:1.13; letter-spacing:-.055em; font-weight:850; }
+    .hero-title .gradient-word { color:transparent; background:linear-gradient(100deg,#6883ff 8%,#a077f7 58%,#cc86e9 100%); -webkit-background-clip:text; background-clip:text; }
+    .hero-subtitle { max-width:580px; margin:22px auto 34px; color:var(--muted); font-size:clamp(14px,1.8vw,17px); line-height:1.85; }
+    .search-wrap { width:min(760px,100%); position:relative; text-align:left; }
+    .search-frame {
+      display:flex; align-items:center; gap:13px; width:100%; min-height:76px; padding:10px 11px 10px 24px;
+      border:1px solid rgba(131,146,180,.3); border-radius:23px; background:var(--surface-solid);
+      box-shadow:var(--shadow), inset 0 1px 0 rgba(255,255,255,.25); transition:border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+    }
+    .search-frame:focus-within { border-color:rgba(108,128,255,.68); transform:translateY(-2px); box-shadow:0 28px 76px rgba(75,94,190,.16), 0 0 0 5px rgba(106,125,255,.08); }
+    .search-icon { flex:none; width:24px; height:24px; color:#8591ab; }
+    .search-input { flex:1; min-width:0; height:52px; border:0!important; outline:none!important; box-shadow:none!important; padding:0!important; color:var(--text)!important; background:transparent!important; font-size:16px; }
+    .search-input::placeholder { color:#9aa4b9; opacity:1; }
+    .search-input::-webkit-search-cancel-button { display:none; }
+    .clear-button { display:none; width:32px; height:32px; flex:none; place-items:center; border:0; border-radius:10px; color:var(--muted); background:transparent; cursor:pointer; }
+    .clear-button.visible { display:grid; }
+    .clear-button:hover { background:rgba(130,145,180,.12); color:var(--text); }
+    .search-button {
+      display:inline-flex; align-items:center; justify-content:center; gap:10px; flex:none; min-width:128px; height:54px; padding:0 21px;
+      border:0; border-radius:16px; color:#fff; background:linear-gradient(115deg,#6378f4,#8c68f4); font-size:14px; font-weight:750; letter-spacing:.02em;
+      box-shadow:0 8px 20px rgba(100,111,232,.27); cursor:pointer; transition:transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+    }
+    .search-button:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 12px 27px rgba(100,111,232,.35); }
+    .search-button:active:not(:disabled) { transform:translateY(0); }
+    .search-button:disabled { opacity:.5; cursor:not-allowed; box-shadow:none; }
+    .search-help { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:15px 8px 0; color:var(--muted); font-size:12px; }
+    .help-item { display:inline-flex; align-items:center; gap:7px; }
+    .help-icon { width:15px; height:15px; opacity:.78; }
+    .keycap { display:inline-grid; place-items:center; min-width:23px; height:22px; padding:0 6px; border:1px solid var(--line); border-radius:6px; color:var(--muted); background:var(--surface); font-size:10px; font-weight:700; }
+    .search-capabilities { display:flex; justify-content:center; flex-wrap:wrap; gap:9px; margin-top:28px; }
+    .capability { display:inline-flex; align-items:center; gap:7px; padding:8px 12px; border:1px solid var(--line); border-radius:999px; color:var(--muted); background:var(--surface); font-size:11px; backdrop-filter:blur(10px); }
+    .capability svg { width:14px; height:14px; color:#8998ff; }
+
+    .results-layout { display:grid; grid-template-columns:minmax(0, 1fr); gap:0; align-items:start; margin:0 0 48px; }
+    .results-main { min-width:0; }
+    .results-summary { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 0 18px; padding:5px 2px 15px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
+    .results-summary-main { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; min-width:0; }
+    .results-summary-title { color:var(--text); font-size:14px; font-weight:800; }
+    .results-total { flex:none; white-space:nowrap; }
+    #loading { color:var(--muted); padding:44px 0; }
+    #loading .animate-spin { color:var(--accent); }
+    #results-area { padding:0 0 34px; display:grid; gap:22px; min-width:0; }
+    #no-results { margin:8px 0 34px; padding:42px 20px; border:1px solid var(--line); border-radius:24px; background:var(--surface); box-shadow:var(--soft-shadow); }
+
+
+    .result-card { overflow:hidden; border:1px solid var(--line); border-radius:20px; background:var(--surface); box-shadow:var(--soft-shadow); backdrop-filter:blur(14px); }
+    .result-card-header { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:19px 23px; border-bottom:1px solid var(--line); background:rgba(126,142,184,.045); }
+    .result-card-header h3 { margin:0; font-weight:750; overflow-wrap:anywhere; }
+    .result-table-wrap { overflow-x:auto; }
+    .result-table { width:100%; min-width:760px; border-collapse:separate; border-spacing:0; }
+    .result-table th { padding:13px 15px; border-bottom:1px solid var(--line); color:var(--muted); background:rgba(120,137,174,.055); font-size:10px; font-weight:800; text-align:left; letter-spacing:.08em; }
+    .result-table td { padding:13px 15px; border-bottom:1px solid var(--line); color:var(--text); font-size:12px; vertical-align:top; }
+    .result-table tbody tr:last-child td { border-bottom:0; }
+    .result-table tbody tr:hover td { background:rgba(115,132,255,.045); }
+    .result-table td.comment-cell { min-width:170px; max-width:330px; white-space:normal; overflow-wrap:anywhere; }
+    .result-count { margin-left:auto; color:var(--muted); font-size:11px; font-weight:600; }
+    .footer { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:21px 0 27px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
+    .footer-brand { display:inline-flex; align-items:center; gap:8px; font-weight:800; letter-spacing:.1em; }
+    .footer-dot { width:5px; height:5px; border-radius:50%; background:linear-gradient(135deg,#6883ff,#c086f2); }
+    .footer-note { text-align:right; }
+    .has-results .hero { min-height:0; align-items:stretch; text-align:left; padding-top:12px; padding-bottom:26px; }
+    .has-results .hero-orb,
+    .has-results .eyebrow,
+    .has-results .hero-title,
+    .has-results .hero-subtitle,
+    .has-results .search-help,
+    .has-results .search-capabilities { display:none!important; }
+    .has-results .search-wrap { width:min(820px,100%); margin:0; }
+    .has-results .search-frame { min-height:64px; }
+    .has-results .search-input { height:44px; }
+    .has-results .search-button { height:46px; }
+    .hidden { display:none!important; }
+
+    @media (max-width: 980px) {
+      .results-layout { grid-template-columns:minmax(0,1fr); gap:0; }
+    }
+
+    /* Small-screen layout: keep controls touch-friendly and render result rows as readable cards. */
+    @media (max-width: 680px) {
+      html, body { max-width:100%; overflow-x:hidden; }
+      .page-shell { width:calc(100% - 24px); max-width:560px; }
+      .topbar { padding:14px 0 12px; gap:8px; }
+      .brand { gap:9px; }
+      .brand-mark { width:38px; height:38px; border-radius:12px; }
+      .brand-name { font-size:12px; letter-spacing:.09em; }
+      .brand-subtitle { font-size:10px; }
+      .topbar-actions { gap:6px; flex:none; }
+      .status-pill { max-width:12px; margin-right:1px; font-size:10px; }
+      #status-text { display:none; }
+      .utility-button { height:44px; min-width:44px; padding:0 9px; border-radius:12px; }
+      .hero { min-height:calc(100svh - 72px); min-height:calc(100dvh - 72px); padding:32px 0 46px; }
+      .hero-orb.orb-a { left:-32%; top:8%; }
+      .hero-orb.orb-b { right:-34%; bottom:8%; }
+      .eyebrow { margin-bottom:17px; padding:7px 10px; font-size:9px; letter-spacing:.1em; }
+      .hero-title { font-size:clamp(32px,9vw,44px); line-height:1.15; letter-spacing:-.045em; }
+      .hero-subtitle { margin:15px auto 24px; font-size:14px; line-height:1.7; }
+      .search-frame { min-height:64px; gap:7px; padding:7px 7px 7px 13px; border-radius:18px; }
+      .search-icon { width:20px; height:20px; }
+      .search-input { height:48px; min-width:0; font-size:16px; }
+      .search-button { min-width:48px; width:48px; height:48px; padding:0; border-radius:13px; }
+      .search-button .button-label { display:none; }
+      .search-help { padding:12px 2px 0; font-size:11px; }
+      .search-capabilities { gap:7px; margin-top:20px; }
+      .capability { font-size:10px; padding:7px 9px; }
+      .has-results .hero { padding-top:8px; padding-bottom:15px; min-height:0; }
+      .has-results .search-wrap { width:100%; }
+      .has-results .search-frame { min-height:58px; padding-left:12px; }
+      .has-results .search-input { height:42px; }
+      .has-results .search-button { width:46px; min-width:46px; height:44px; }
+      .results-layout { gap:12px; margin-bottom:22px; }
+      .results-summary { flex-direction:row; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; padding:4px 1px 10px; scroll-margin-top:12px; }
+      .results-summary-main { gap:6px; }
+      .results-summary-title { font-size:14px; }
+      .results-total { font-size:11px; text-align:right; white-space:normal; }
+      #loading { padding:28px 0; }
+      #no-results { margin:8px 0 22px; padding:28px 15px; border-radius:17px; font-size:13px; line-height:1.7; }
+      #results-area { gap:14px; padding-bottom:22px; }
+      .result-card { border-radius:16px; backdrop-filter:none; }
+      .result-card-header { align-items:flex-start; gap:8px; padding:13px 14px; }
+      .result-card-header h3 { flex:1 1 100%; font-size:15px; line-height:1.45; }
+      .result-card-header .result-count { margin-left:0; font-size:11px; }
+      .result-table-wrap { overflow:visible; }
+      .result-table, .result-table tbody { display:block; width:100%; min-width:0; }
+      .result-table thead { display:none; }
+      .result-table tr { display:block; padding:7px 13px; border-bottom:1px solid var(--line); }
+      .result-table tbody tr:last-child { border-bottom:0; }
+      .result-table td {
+        display:grid; grid-template-columns:minmax(82px, 32%) minmax(0, 1fr); align-items:start; gap:10px;
+        width:100%; min-width:0; padding:8px 0; border-bottom:1px dashed var(--line);
+        font-size:13px; line-height:1.5; white-space:normal; overflow-wrap:anywhere; word-break:normal;
+      }
+      .result-table td::before { content:attr(data-label); min-width:0; color:var(--muted); font-size:11px; font-weight:700; line-height:1.6; }
+      .result-table td:last-child { border-bottom:0; }
+      .result-table td.comment-cell { min-width:0; max-width:none; }
+      .result-table td.text-center { text-align:left; }
+      .status-badge-wrap { justify-self:start; flex-wrap:wrap; }
+      .status-tooltip { display:none; }
+      .status-badge-wrap:focus .status-tooltip,
+      .status-badge-wrap:focus-visible .status-tooltip {
+        display:block; position:static; visibility:visible; opacity:1; transform:none; margin:6px 0 0;
+        max-width:min(220px, 58vw); white-space:normal; text-align:left; pointer-events:auto; line-height:1.55;
+      }
+      .status-tooltip > div:last-child { display:none; }
+      .footer { align-items:flex-start; flex-direction:column; gap:8px; padding:18px 0 22px; }
+      .footer-note { text-align:left; }
+    }
+    @media (max-width: 380px) {
+      .page-shell { width:calc(100% - 20px); }
+      .brand-name { font-size:11px; }
+      .topbar-actions { gap:4px; }
+      .utility-button { min-width:42px; width:42px; padding:0 7px; }
+      .result-table tr { padding-left:10px; padding-right:10px; }
+      .result-table td { grid-template-columns:minmax(72px, 30%) minmax(0, 1fr); gap:8px; }
+    }
+    @media (max-width: 760px) and (max-height: 560px) {
+      .hero { min-height:0; padding:30px 0 34px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; }
+    }
+  </style>
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-sans transition-colors duration-300">
+<body class="font-sans transition-colors duration-300">
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="QSL Query home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="25" height="25" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="13.5" cy="13.5" r="7.5" stroke="currentColor" stroke-width="2.6"/>
+            <path d="m19.2 19.2 6.1 6.1M9.5 13.5h8M13.5 9.5v8" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span>
+          <span class="brand-name block">QSL QUERY</span>
+        </span>
+      </a>
+      <div class="topbar-actions">
+        <div id="status-message" class="status-pill status--info" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span><span id="status-text">正在初始化数据库…</span>
+        </div>
+        <button id="lang-toggle" class="utility-button" type="button" aria-label="Switch language">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span id="lang-text">EN</span>
+        </button>
+        <button id="theme-toggle" class="utility-button" type="button" aria-label="Toggle color theme">
+          <svg id="theme-icon-light" class="hidden" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+          <svg id="theme-icon-dark" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"/></svg>
+        </button>
+      </div>
+    </header>
 
-    <div class="container mx-auto p-4 md:p-8">
-        <header class="flex justify-between items-center mb-8">
-            <h1 id="header-title" class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">QSL 信息查询</h1>
-            <div class="flex space-x-2">
-                <button id="lang-toggle" class="p-2 rounded-lg text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900 font-medium text-sm">
-                    <span id="lang-text">English</span>
-                </button>
-                <button id="theme-toggle" class="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900">
-                    <svg id="theme-icon-light" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                    <svg id="theme-icon-dark" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
-                </button>
+    <main>
+      <section class="hero" id="search-hero" aria-labelledby="main-title">
+        <span class="hero-orb orb-a" aria-hidden="true"></span>
+        <span class="hero-orb orb-b" aria-hidden="true"></span>
+        <div class="eyebrow"><span class="eyebrow-mark"></span><span id="eyebrow-text">AMATEUR RADIO · QSL DIRECTORY</span></div>
+        <h1 class="hero-title" id="main-title">查找你的 <span class="gradient-word">QSL 记录</span></h1>
+        <p class="hero-subtitle" id="hero-subtitle">快速找到卡片编号、呼号以及对应的通联记录。</p>
+
+        <form id="search-form" class="search-wrap" role="search" autocomplete="off">
+          <div class="search-frame">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="7.1"/><path d="m16.2 16.2 4.3 4.3"/></svg>
+            <input id="qsl-id-input" class="search-input" type="search" placeholder="输入 QSL 卡号或呼号" aria-label="输入 QSL 卡号、卡号前缀或呼号" spellcheck="false" autocapitalize="characters" autocomplete="off">
+            <button id="clear-button" class="clear-button" type="button" aria-label="清空搜索内容" title="清空">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+            </button>
+            <button id="search-button" class="search-button" type="submit" disabled>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.8" cy="10.8" r="7.1"/><path d="m16.2 16.2 4.3 4.3"/></svg>
+              <span class="button-label" id="search-button-text">开始搜索</span>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section id="results-layout" class="results-layout hidden" aria-label="Search results">
+        <div class="results-main">
+          <div id="results-summary" class="results-summary hidden" aria-live="polite">
+            <div class="results-summary-main">
+              <span id="results-summary-title" class="results-summary-title">搜索结果</span>
             </div>
-        </header>
-
-        <div id="status-message" class="mb-6 p-4 bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 rounded-lg shadow-md hidden">
-             <p id="status-text"></p>
+            <span id="results-total" class="results-total"></span>
+          </div>
+          <div id="loading" class="text-center py-10 hidden" aria-live="polite">
+            <svg class="animate-spin h-8 w-8 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            <p id="loading-text" class="mt-3 text-sm">正在查询…</p>
+          </div>
+          <div id="no-results" class="text-center hidden" aria-live="polite"><p id="no-results-text">未找到匹配的通联记录，请检查输入后重试。</p></div>
+          <section id="results-area" aria-label="Search results"></section>
         </div>
 
+      </section>
+    </main>
+  </div>
 
-        <div id="search-section" class="mb-8 p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-            <h2 id="search-header" class="text-xl font-semibold mb-4">查询通联信息</h2>
-            
-            <div class="flex items-center space-x-4 mb-4">
-                <label class="flex items-center">
-                    <input type="radio" name="search-type" value="qsl" class="form-radio h-4 w-4 text-indigo-600" checked>
-                    <span id="radio-qsl-label" class="ml-2 text-gray-700 dark:text-gray-300">按QSL卡号查询</span>
-                </label>
-                <label class="flex items-center">
-                    <input type="radio" name="search-type" value="callsign" class="form-radio h-4 w-4 text-indigo-600">
-                    <span id="radio-callsign-label" class="ml-2 text-gray-700 dark:text-gray-300">按呼号查询</span>
-                </label>
-            </div>
+  <script>
+    const statusMessage = document.getElementById('status-message');
+    const statusText = document.getElementById('status-text');
+    const qslIdInput = document.getElementById('qsl-id-input');
+    const searchButton = document.getElementById('search-button');
+    const clearButton = document.getElementById('clear-button');
+    const resultsArea = document.getElementById('results-area');
+    const resultsLayout = document.getElementById('results-layout');
+    const resultsSummary = document.getElementById('results-summary');
+    const resultsSummaryTitle = document.getElementById('results-summary-title');
+    const resultsTotal = document.getElementById('results-total');
+    const loadingIndicator = document.getElementById('loading');
+    const noResultsMessage = document.getElementById('no-results');
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIconLight = document.getElementById('theme-icon-light');
+    const themeIconDark = document.getElementById('theme-icon-dark');
+    const langToggle = document.getElementById('lang-toggle');
+    const langText = document.getElementById('lang-text');
+    let db;
+    let lastSearch = null;
+    let statusKind = 'info';
 
-            <div class="flex flex-col sm:flex-row gap-4">
-                <input type="text" id="qsl-id-input" placeholder="输入QSL卡号(或前缀), 可用逗号分隔..." class="flex-grow w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white rounded-lg p-3 focus:ring-indigo-500 focus:border-indigo-500">
-                <button id="search-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                    <span id="search-button-text">查询</span>
-                </button>
-            </div>
-        </div>
-        
-        <div id="loading" class="text-center py-10 hidden">
-            <svg class="animate-spin h-8 w-8 text-indigo-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p id="loading-text" class="mt-2 text-gray-600 dark:text-gray-400">正在查询...</p>
-        </div>
+    const TRANSLATIONS = {
+      zh: {
+        TITLE: 'QSL Query · QSL 信息查询',
+        DESCRIPTION: '快速查询 QSL 卡号、卡号前缀与业余无线电通联记录。',
+        BRAND_LABEL: 'QSL Query 首页', LANGUAGE_TOGGLE: '切换语言', THEME_TOGGLE: '切换颜色主题', CLEAR_SEARCH: '清空搜索内容',
+        RESULTS_LABEL: '搜索结果',
+        EYEBROW: 'AMATEUR RADIO · QSL DIRECTORY', MAIN_TITLE: '查找你的 <span class="gradient-word">QSL 记录</span>',
+        SUBTITLE: '快速找到卡片编号、呼号以及对应的通联记录。',
+        PLACEHOLDER: '输入 QSL 卡号或呼号', SEARCH_BUTTON: '开始搜索',
+        SEARCH_HINT: '无需选择类型，系统会自动识别卡号或呼号', ENTER_HINT: '按 Enter 搜索',
+        FEATURE_QSL: 'QSL 卡号与前缀', FEATURE_CALLSIGN: '业余无线电呼号', FEATURE_AUTO: '自动识别 · 统一搜索框',
+        LOADING: '正在查询…', SEARCH_RESULTS: '搜索结果', NO_RESULTS: '未找到匹配的通联记录，请检查输入后重试。',
+        STATUS_INIT: '正在初始化数据库…', STATUS_READY: '数据库已就绪', STATUS_ERROR: '数据库加载失败',
+        STATUS_ENGINE: '正在加载数据库引擎…', STATUS_FETCH: '正在读取数据库文件…', STATUS_INDEX: '正在优化查询索引…',
+        NOT_FOUND_QSL_PREFIX: '以下 QSL 卡号或前缀未找到：', UNLINKED_CARD: '未关联卡片',
+        SENT_STATUS: '已发出', RECEIVED_STATUS: '已收到', PENDING_OUT_STATUS: '待出库', PENDING_IN_STATUS: '待入库',
+        TOOLTIP_QSL_ID: 'QSL 编号：', TOOLTIP_TIME: '日期：', NOT_CONFIRMED: '未确认', SATELLITE_LABEL: '卫星', QSL_SENT_DETAIL: '查看发卡状态详情', QSL_RECEIVED_DETAIL: '查看收卡状态详情',
+        CALLSIGN_RESULT_TITLE: callsign => `与 ${callsign} 的通联记录`,
+        RECORD_COUNT: count => `${count} 条记录`, QSO_COUNT: count => `${count} 条通联`,
+        QSL_LOG_COLUMNS: ['呼号', '日期 (UTC)', '时间 (UTC)', '频率 (MHz)', '波段', '模式', '信号报告 (S/R)', '备注'],
+        CALLSIGN_LOG_COLUMNS: ['日期 (UTC)', '时间 (UTC)', '频率 (MHz)', '波段', '模式', '信号报告 (S/R)', '备注', '收卡状态', '发卡状态'],
+        QSL_NOT_FOUND_INFO: '以下 QSL 卡号或前缀未找到：', LANG_TOGGLE: 'EN',
+        ALERT_DB: '数据库尚未准备就绪，请稍候。', ALERT_SEARCH: '查询时发生错误：',
+        ERR_SCRIPT_TIMEOUT: src => `加载脚本超时：${src}`,
+        ERR_SCRIPT_LOAD: src => `无法加载脚本：${src}`,
+        ERR_SQL_JS_API: 'SQL.js 脚本已加载，但初始化接口不存在。',
+        ERR_SQL_JS_LOAD: details => `无法加载 SQL.js。请检查网络或 CDN 访问。${details ? ' ' + details : ''}`,
+        ERR_WASM_TIMEOUT: base => `加载 SQL.js WebAssembly 组件超时（${base}）。`,
+        ERR_SQL_INIT: details => `SQL.js 引擎初始化失败。${details}`,
+        ERR_DB_FETCH_TIMEOUT: '读取 qsl_manager.db 超时，请检查网页目录与网络连接。',
+        ERR_DB_ABORTED: '读取数据库文件已中止，请检查网络。',
+        ERR_DB_NETWORK: '无法连接数据库文件，请检查网络和服务器配置。',
+        ERR_DB_HTTP: status => `无法加载数据库文件（HTTP ${status}）。请确保 qsl_manager.db 与此网页位于同一目录。`,
+        ERR_DB_READ_TIMEOUT: '数据库文件读取超时，请检查服务器响应。',
+        ERR_DB_EMPTY: '数据库文件为空。'
+      },
+      en: {
+        TITLE: 'QSL Query · QSL Information Search',
+        DESCRIPTION: 'Quickly search QSL card IDs, card prefixes, and amateur radio QSO records.',
+        BRAND_LABEL: 'QSL Query home', LANGUAGE_TOGGLE: 'Switch language', THEME_TOGGLE: 'Toggle color theme', CLEAR_SEARCH: 'Clear search',
+        RESULTS_LABEL: 'Search results',
+        EYEBROW: 'AMATEUR RADIO · QSL DIRECTORY', MAIN_TITLE: 'Find your <span class="gradient-word">QSL records</span>',
+        SUBTITLE: 'Find QSL card IDs, callsigns, and their associated QSO records.',
+        PLACEHOLDER: 'Enter a QSL ID or callsign', SEARCH_BUTTON: 'Search',
+        SEARCH_HINT: 'No type selection needed. The search detects IDs and callsigns automatically.', ENTER_HINT: 'Press Enter to search',
+        FEATURE_QSL: 'QSL IDs & prefixes', FEATURE_CALLSIGN: 'Amateur callsigns', FEATURE_AUTO: 'Auto-detect · One search field',
+        LOADING: 'Searching…', SEARCH_RESULTS: 'Search results', NO_RESULTS: 'No matching QSO records found. Check your input and try again.',
+        STATUS_INIT: 'Preparing database…', STATUS_READY: 'Database ready', STATUS_ERROR: 'Database failed to load',
+        STATUS_ENGINE: 'Loading database engine…', STATUS_FETCH: 'Reading database file…', STATUS_INDEX: 'Optimizing search indexes…',
+        NOT_FOUND_QSL_PREFIX: 'No records found for these QSL IDs or prefixes:', UNLINKED_CARD: 'Unlinked card',
+        SENT_STATUS: 'Sent', RECEIVED_STATUS: 'Received', PENDING_OUT_STATUS: 'Pending dispatch', PENDING_IN_STATUS: 'Pending receipt',
+        TOOLTIP_QSL_ID: 'QSL ID:', TOOLTIP_TIME: 'Date:', NOT_CONFIRMED: 'Not confirmed', SATELLITE_LABEL: 'Satellite', QSL_SENT_DETAIL: 'View QSL sent status details', QSL_RECEIVED_DETAIL: 'View QSL received status details',
+        CALLSIGN_RESULT_TITLE: callsign => `QSO records with ${callsign}`, 
+        RECORD_COUNT: count => `${count} records`, QSO_COUNT: count => `${count} QSOs`,
+        QSL_LOG_COLUMNS: ['Callsign', 'Date (UTC)', 'Time (UTC)', 'Freq (MHz)', 'Band', 'Mode', 'RST (S/R)', 'Comments'],
+        CALLSIGN_LOG_COLUMNS: ['Date (UTC)', 'Time (UTC)', 'Freq (MHz)', 'Band', 'Mode', 'RST (S/R)', 'Comments', 'QSL Received', 'QSL Sent'],
+        QSL_NOT_FOUND_INFO: 'No records found for these QSL IDs or prefixes:', LANG_TOGGLE: '中文',
+        ALERT_DB: 'The database is not ready yet. Please wait.', ALERT_SEARCH: 'Search error: ',
+        ERR_SCRIPT_TIMEOUT: src => `Loading script timed out: ${src}`,
+        ERR_SCRIPT_LOAD: src => `Unable to load script: ${src}`,
+        ERR_SQL_JS_API: 'The SQL.js script loaded, but its initialization API is missing.',
+        ERR_SQL_JS_LOAD: details => `Unable to load SQL.js. Check your network connection or CDN access.${details ? ' ' + details : ''}`,
+        ERR_WASM_TIMEOUT: base => `Loading the SQL.js WebAssembly component timed out (${base}).`,
+        ERR_SQL_INIT: details => `SQL.js engine initialization failed. ${details}`,
+        ERR_DB_FETCH_TIMEOUT: 'Timed out while fetching qsl_manager.db. Check the page directory and network connection.',
+        ERR_DB_ABORTED: 'The database request was interrupted. Check your network connection.',
+        ERR_DB_NETWORK: 'Unable to reach the database file. Check your network and server configuration.',
+        ERR_DB_HTTP: status => `Unable to load the database file (HTTP ${status}). Keep qsl_manager.db in the same directory as this page.`,
+        ERR_DB_READ_TIMEOUT: 'Reading the database file timed out. Check the server response.',
+        ERR_DB_EMPTY: 'The database file is empty.'
+      }
+    };
+    let currentLang = 'zh';
 
-        <div id="results-area" class="space-y-6">
-            </div>
-        
-        <div id="no-results" class="text-center py-10 hidden">
-             <p id="no-results-text" class="text-gray-500 dark:text-gray-400">未找到任何匹配的记录。</p>
-        </div>
+    function setTextIfPresent(id, value) {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value == null ? '' : String(value);
+    }
 
-    </div>
+    function getStoredSetting(key) {
+      try { return window.localStorage.getItem(key); } catch (_) { return null; }
+    }
 
-    <script>
-        const statusMessage = document.getElementById('status-message');
-        const statusText = document.getElementById('status-text');
-        const qslIdInput = document.getElementById('qsl-id-input');
-        const searchButton = document.getElementById('search-button');
-        const resultsArea = document.getElementById('results-area');
-        const loadingIndicator = document.getElementById('loading');
-        const noResultsMessage = document.getElementById('no-results');
-        const themeToggle = document.getElementById('theme-toggle');
-        const themeIconLight = document.getElementById('theme-icon-light');
-        const themeIconDark = document.getElementById('theme-icon-dark');
-        const searchTypeRadios = document.querySelectorAll('input[name="search-type"]');
-        
-        // 新增：语言切换元素
-        const langToggle = document.getElementById('lang-toggle');
-        const langText = document.getElementById('lang-text');
+    function setStoredSetting(key, value) {
+      try { window.localStorage.setItem(key, value); } catch (_) { /* Storage may be blocked in private or file contexts. */ }
+    }
 
-        let db;
+    function updateContent(lang, rerender = true) {
+      currentLang = lang;
+      const t = TRANSLATIONS[lang];
+      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+      document.title = t.TITLE;
+      const description = document.querySelector('meta[name="description"]');
+      if (description) description.setAttribute('content', t.DESCRIPTION);
+      document.querySelector('.brand')?.setAttribute('aria-label', t.BRAND_LABEL);
+      langToggle.setAttribute('aria-label', t.LANGUAGE_TOGGLE);
+      themeToggle.setAttribute('aria-label', t.THEME_TOGGLE);
+      clearButton.setAttribute('aria-label', t.CLEAR_SEARCH);
+      clearButton.title = t.CLEAR_SEARCH;
+      resultsLayout.setAttribute('aria-label', t.RESULTS_LABEL);
+      resultsArea.setAttribute('aria-label', t.RESULTS_LABEL);
+      document.getElementById('eyebrow-text').textContent = t.EYEBROW;
+      document.getElementById('main-title').innerHTML = t.MAIN_TITLE;
+      document.getElementById('hero-subtitle').textContent = t.SUBTITLE;
+      qslIdInput.placeholder = t.PLACEHOLDER;
+      qslIdInput.setAttribute('aria-label', t.PLACEHOLDER);
+      document.getElementById('search-button-text').textContent = t.SEARCH_BUTTON;
+      setTextIfPresent('search-hint', t.SEARCH_HINT);
+      setTextIfPresent('enter-hint', t.ENTER_HINT);
+      setTextIfPresent('feature-qsl', t.FEATURE_QSL);
+      setTextIfPresent('feature-callsign', t.FEATURE_CALLSIGN);
+      setTextIfPresent('feature-auto', t.FEATURE_AUTO);
+      document.getElementById('loading-text').textContent = t.LOADING;
+      document.getElementById('no-results-text').textContent = t.NO_RESULTS;
+      if (lastSearch && !resultsLayout.classList.contains('hidden')) {
+        resultsSummaryTitle.textContent = t.SEARCH_RESULTS;
+      }
+      langText.textContent = t.LANG_TOGGLE;
+      if (statusKind === 'ready') showStatus(t.STATUS_READY, 'success');
+      else if (statusKind === 'error') showStatus(t.STATUS_ERROR, 'error');
+      else showStatus(t.STATUS_INIT, 'info');
+      if (rerender && lastSearch && (resultsArea.innerHTML !== '' || !noResultsMessage.classList.contains('hidden'))) {
+        performSearch(lastSearch.input, lastSearch.type, true);
+      }
+    }
 
-        // --- 语言数据 ---
-        const TRANSLATIONS = {
-            'zh': {
-                TITLE: 'QSL 信息查询',
-                HEADER_TITLE: 'QSL 信息查询',
-                SEARCH_HEADER: '查询通联信息',
-                RADIO_QSL: '按QSL卡号查询',
-                RADIO_CALLSIGN: '按呼号查询',
-                PLACEHOLDER_QSL: '输入QSL卡号(或前缀), 可用逗号分隔...',
-                PLACEHOLDER_CALLSIGN: '输入呼号...',
-                SEARCH_BUTTON: '查询',
-                LOADING: '正在查询...',
-                NO_RESULTS: '未找到任何匹配的记录。',
-                STATUS_INIT: '正在初始化查询系统...',
-                STATUS_READY: '查询系统已就绪。',
-                STATUS_ERROR: '错误:',
-                NOT_FOUND_QSL_PREFIX: '未找到与以下QSL卡号(或前缀)相关的日志:',
-                UNLINKED_CARD: '未关联卡片',
-                SENT_STATUS: '已发出',
-                RECEIVED_STATUS: '已收到',
-                PENDING_OUT_STATUS: '待出库',
-                PENDING_IN_STATUS: '待入库',
-                TOOLTIP_QSL_ID: 'QSL ID:',
-                TOOLTIP_TIME: '时间:',
-                CALLSIGN_RESULT_TITLE: (callsign) => `与 ${callsign} 的通联记录`,
-                QSL_LOG_COLUMNS: ['呼号', '日期 (UTC)', '时间 (UTC)', '频率 (MHz)', '波段', '模式', '信号报告 (S/R)', '备注'],
-                CALLSIGN_LOG_COLUMNS: ['日期 (UTC)', '时间 (UTC)', '频率 (MHz)', '波段', '模式', '信号报告 (S/R)', '备注', '收卡状态', '发卡状态'],
-                QSL_NOT_FOUND_INFO: '以下QSL卡号(或前缀)未找到:',
-                LANG_TOGGLE: 'English'
-            },
-            'en': {
-                TITLE: 'QSL Information Query',
-                HEADER_TITLE: 'QSL Information Query',
-                SEARCH_HEADER: 'Query QSO Information',
-                RADIO_QSL: 'Search by QSL ID',
-                RADIO_CALLSIGN: 'Search by Callsign',
-                PLACEHOLDER_QSL: 'Enter QSL ID (or prefix), comma separated...',
-                PLACEHOLDER_CALLSIGN: 'Enter Callsign...',
-                SEARCH_BUTTON: 'Search',
-                LOADING: 'Searching...',
-                NO_RESULTS: 'No matching records found.',
-                STATUS_INIT: 'Initializing query system...',
-                STATUS_READY: 'Query system ready.',
-                STATUS_ERROR: 'Error:',
-                NOT_FOUND_QSL_PREFIX: 'No logs found for the following QSL ID(s) or prefix(es):',
-                UNLINKED_CARD: 'Unlinked Card',
-                SENT_STATUS: 'Sent',
-                RECEIVED_STATUS: 'Received',
-                PENDING_OUT_STATUS: 'Pending (Out)',
-                PENDING_IN_STATUS: 'Pending (In)',
-                TOOLTIP_QSL_ID: 'QSL ID:',
-                TOOLTIP_TIME: 'Time:',
-                CALLSIGN_RESULT_TITLE: (callsign) => `QSO Records for ${callsign}`,
-                QSL_LOG_COLUMNS: ['Callsign', 'Date (UTC)', 'Time (UTC)', 'Freq (MHz)', 'Band', 'Mode', 'RST (S/R)', 'Comments'],
-                CALLSIGN_LOG_COLUMNS: ['Date (UTC)', 'Time (UTC)', 'Freq (MHz)', 'Band', 'Mode', 'RST (S/R)', 'Comments', 'QSL Received', 'QSL Sent'],
-                QSL_NOT_FOUND_INFO: 'The following QSL ID(s) or prefix(es) were not found:',
-                LANG_TOGGLE: '中文'
-            }
+    langToggle.addEventListener('click', () => {
+      const newLang = currentLang === 'zh' ? 'en' : 'zh';
+      setStoredSetting('lang', newLang);
+      updateContent(newLang);
+    });
+
+    function applyTheme(isDark) {
+      document.documentElement.classList.toggle('dark', isDark);
+      themeIconLight.classList.toggle('hidden', !isDark);
+      themeIconDark.classList.toggle('hidden', isDark);
+      document.querySelector('meta[name="theme-color"]').setAttribute('content', isDark ? '#0b1020' : '#f7f9fc');
+    }
+    themeToggle.addEventListener('click', () => {
+      const isDark = !document.documentElement.classList.contains('dark');
+      setStoredSetting('theme', isDark ? 'dark' : 'light');
+      applyTheme(isDark);
+    });
+    const savedTheme = getStoredSetting('theme');
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(savedTheme ? savedTheme === 'dark' : Boolean(prefersDark));
+
+    function showStatus(message, type = 'info') {
+      statusKind = type === 'success' ? 'ready' : type === 'error' ? 'error' : 'info';
+      statusMessage.classList.remove('status--info', 'status--success', 'status--error');
+      statusMessage.classList.add(type === 'success' ? 'status--success' : type === 'error' ? 'status--error' : 'status--info');
+      statusText.textContent = message;
+      statusMessage.title = message;
+    }
+
+    const SQL_JS_SOURCES = [
+      {
+        script: 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js',
+        base: 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/'
+      },
+      {
+        script: 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js',
+        base: 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/'
+      }
+    ];
+
+    function withTimeout(promise, timeoutMs, message) {
+      let timer;
+      return Promise.race([
+        Promise.resolve(promise),
+        new Promise((_, reject) => {
+          timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+        })
+      ]).finally(() => window.clearTimeout(timer));
+    }
+
+    function loadExternalScript(src, timeoutMs = 10000) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        let finished = false;
+        const finish = error => {
+          if (finished) return;
+          finished = true;
+          window.clearTimeout(timer);
+          script.onload = null;
+          script.onerror = null;
+          if (error) {
+            script.remove();
+            reject(error);
+          } else {
+            resolve();
+          }
         };
+        const timer = window.setTimeout(() => {
+          finish(new Error(TRANSLATIONS[currentLang].ERR_SCRIPT_TIMEOUT(src))); 
+        }, timeoutMs);
+        script.async = true;
+        script.onload = () => finish();
+        script.onerror = () => finish(new Error(TRANSLATIONS[currentLang].ERR_SCRIPT_LOAD(src))); 
+        script.src = src;
+        document.head.appendChild(script);
+      });
+    }
 
-        let currentLang = 'zh'; // 默认语言
-
-        // --- 语言切换逻辑 ---
-        function updateContent(lang) {
-            currentLang = lang;
-            const t = TRANSLATIONS[lang];
-            
-            // 1. HTML 根和 Title
-            document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-            document.title = t.TITLE;
-
-            // 2. 头部
-            document.getElementById('header-title').textContent = t.HEADER_TITLE;
-            document.getElementById('search-header').textContent = t.SEARCH_HEADER;
-            langText.textContent = t.LANG_TOGGLE;
-            
-            // 3. 搜索区域
-            document.getElementById('radio-qsl-label').textContent = t.RADIO_QSL;
-            document.getElementById('radio-callsign-label').textContent = t.RADIO_CALLSIGN;
-            document.getElementById('search-button-text').textContent = t.SEARCH_BUTTON;
-
-            // 4. 输入框 Placeholder (根据当前选择的类型更新)
-            const searchType = document.querySelector('input[name="search-type"]:checked').value;
-            if (searchType === 'qsl') {
-                qslIdInput.placeholder = t.PLACEHOLDER_QSL;
-            } else {
-                qslIdInput.placeholder = t.PLACEHOLDER_CALLSIGN;
+    async function loadSqlEngine() {
+      let loadedBase = null;
+      if (typeof window.initSqlJs !== 'function') {
+        const loadErrors = [];
+        for (const source of SQL_JS_SOURCES) {
+          try {
+            await loadExternalScript(source.script);
+            if (typeof window.initSqlJs !== 'function') {
+              throw new Error(TRANSLATIONS[currentLang].ERR_SQL_JS_API);
             }
-
-            // 5. 状态/结果消息
-            document.getElementById('loading-text').textContent = t.LOADING;
-            document.getElementById('no-results-text').textContent = t.NO_RESULTS;
-
-            // 6. 如果结果区域已显示，重新渲染以更新表头
-            if (resultsArea.innerHTML !== '') {
-                // 强制重新执行查询以更新所有动态文本，但先保存当前的搜索内容
-                const searchInput = qslIdInput.value.trim().toUpperCase();
-                if(searchInput) {
-                    // 使用 qslIdInput.value 作为原始输入
-                    performSearch(qslIdInput.value, searchType, true); 
-                } else {
-                    // 如果结果区域不为空但输入框为空，说明是 QSL ID 历史查询。这里不重新搜索，只等下次查询。
-                    resultsArea.innerHTML = '';
-                    noResultsMessage.classList.add('hidden');
-                }
-            }
+            loadedBase = source.base;
+            break;
+          } catch (error) {
+            loadErrors.push(error.message);
+          }
         }
+        if (typeof window.initSqlJs !== 'function') {
+          throw new Error(TRANSLATIONS[currentLang].ERR_SQL_JS_LOAD(loadErrors.join(currentLang === 'zh' ? '；' : '; ')));
+        }
+      }
 
-        langToggle.addEventListener('click', () => {
-            const newLang = currentLang === 'zh' ? 'en' : 'zh';
-            localStorage.setItem('lang', newLang);
-            updateContent(newLang);
+      const bases = [loadedBase, ...SQL_JS_SOURCES.map(source => source.base)].filter((base, index, arr) => base && arr.indexOf(base) === index);
+      const wasmErrors = [];
+      for (const base of bases) {
+        try {
+          return await withTimeout(
+            window.initSqlJs({ locateFile: file => new URL(file, base).href }),
+            12000,
+            TRANSLATIONS[currentLang].ERR_WASM_TIMEOUT(base)
+          );
+        } catch (error) {
+          wasmErrors.push(error.message);
+        }
+      }
+      throw new Error(TRANSLATIONS[currentLang].ERR_SQL_INIT(wasmErrors.join(currentLang === 'zh' ? '；' : '; ')));
+    }
+
+    async function initDb() {
+      showStatus(TRANSLATIONS[currentLang].STATUS_ENGINE, 'info');
+      searchButton.disabled = true;
+      try {
+        const SQL = await loadSqlEngine();
+        showStatus(TRANSLATIONS[currentLang].STATUS_FETCH, 'info');
+
+        let response;
+        try {
+          response = await withTimeout(
+            fetch(new URL('qsl_manager.db', document.baseURI).href, { cache: 'default' }),
+            20000,
+            TRANSLATIONS[currentLang].ERR_DB_FETCH_TIMEOUT
+          );
+        } catch (error) {
+          throw new Error(error.name === 'AbortError'
+            ? TRANSLATIONS[currentLang].ERR_DB_ABORTED
+            : (error instanceof TypeError ? TRANSLATIONS[currentLang].ERR_DB_NETWORK : error.message));
+        }
+        if (!response.ok) {
+          throw new Error(TRANSLATIONS[currentLang].ERR_DB_HTTP(response.status));
+        }
+        const fileBuffer = await withTimeout(
+          response.arrayBuffer(),
+          15000,
+          TRANSLATIONS[currentLang].ERR_DB_READ_TIMEOUT
+        );
+        if (!fileBuffer.byteLength) throw new Error(TRANSLATIONS[currentLang].ERR_DB_EMPTY);
+
+        db = new SQL.Database(new Uint8Array(fileBuffer));
+        showStatus(TRANSLATIONS[currentLang].STATUS_INDEX, 'info');
+        // These indexes exist only in this in-memory session and do not alter the source DB file.
+        db.exec(`
+          PRAGMA temp_store = MEMORY;
+          CREATE INDEX IF NOT EXISTS idx_qsl_log_link_log_id ON qsl_log_link(log_id, qsl_id);
+          CREATE INDEX IF NOT EXISTS idx_logs_callsign_nocase ON logs(station_callsign COLLATE NOCASE);
+        `);
+
+        showStatus(TRANSLATIONS[currentLang].STATUS_READY, 'success');
+        searchButton.disabled = false;
+      } catch (error) {
+        console.error('QSL database initialization failed:', error);
+        showStatus(`${TRANSLATIONS[currentLang].STATUS_ERROR}: ${error.message || error}`, 'error');
+        searchButton.disabled = true;
+      }
+    }
+
+    function queryQsl(searchInput) {
+      const searchTerms = searchInput.split(',').map(term => term.trim()).filter(Boolean);
+      if (!searchTerms.length) return { results: [], notFoundItems: [] };
+      const whereConditions = searchTerms.map(() => 'q.qsl_id LIKE ?').join(' OR ');
+      const query = `
+        SELECT q.qsl_id, q.direction, q.status, l.*
+        FROM qsl_cards q
+        JOIN qsl_log_link ql ON q.qsl_id = ql.qsl_id
+        JOIN logs l ON ql.log_id = l.id
+        WHERE ${whereConditions}
+        ORDER BY q.qsl_id, l.qso_date DESC, l.time_on DESC;
+      `;
+      const stmt = db.prepare(query);
+      stmt.bind(searchTerms.map(term => `${term}%`));
+      const results = [];
+      while (stmt.step()) results.push(stmt.getAsObject());
+      stmt.free();
+      const foundQslIds = results.map(row => String(row.qsl_id || '').toUpperCase());
+      const notFoundItems = searchTerms.filter(term => !foundQslIds.some(foundId => foundId.startsWith(term)));
+      return { results, notFoundItems };
+    }
+
+    function queryCallsign(searchInput) {
+      let baseCallsign = searchInput;
+      const slashIndex = searchInput.indexOf('/');
+      if (slashIndex !== -1) baseCallsign = searchInput.substring(0, slashIndex);
+      const query = `
+        SELECT l.*, GROUP_CONCAT(q.qsl_id) AS linked_qsl_ids
+        FROM logs l
+        LEFT JOIN qsl_log_link ql ON l.id = ql.log_id
+        LEFT JOIN qsl_cards q ON ql.qsl_id = q.qsl_id
+        WHERE l.id IN (
+          SELECT id FROM logs WHERE station_callsign = ? COLLATE NOCASE
+          UNION
+          SELECT id FROM logs WHERE station_callsign LIKE ?
+        )
+        GROUP BY l.id
+        ORDER BY l.qso_date DESC, l.time_on DESC;
+      `;
+      const stmt = db.prepare(query);
+      stmt.bind([baseCallsign, `${baseCallsign}/%`]);
+      const results = [];
+      while (stmt.step()) results.push(stmt.getAsObject());
+      stmt.free();
+      return results;
+    }
+
+    function updateResultsSummary(count = null) {
+      const t = TRANSLATIONS[currentLang];
+      resultsSummary.classList.remove('hidden');
+      resultsSummaryTitle.textContent = t.SEARCH_RESULTS;
+      resultsTotal.textContent = count === null ? t.LOADING : t.RECORD_COUNT(count);
+    }
+
+    async function performSearch(input, type = 'auto', keepInput = false) {
+      if (!db) {
+        alert(TRANSLATIONS[currentLang].ALERT_DB);
+        return;
+      }
+      const t = TRANSLATIONS[currentLang];
+      const searchInput = String(input == null ? qslIdInput.value : input).trim().toUpperCase();
+      if (!searchInput) {
+        qslIdInput.focus();
+        return;
+      }
+      lastSearch = { input: searchInput, type: type || 'auto' };
+      document.body.classList.add('has-results');
+      resultsLayout.classList.remove('hidden');
+      updateResultsSummary(null);
+      loadingIndicator.classList.remove('hidden');
+      resultsArea.innerHTML = '';
+      noResultsMessage.classList.add('hidden');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      try {
+        let results = [];
+        let notFoundItems = [];
+        let searchType = type || 'auto';
+        if (searchType === 'qsl') {
+          const queryResult = queryQsl(searchInput);
+          results = queryResult.results;
+          notFoundItems = queryResult.notFoundItems;
+        } else if (searchType === 'callsign') {
+          results = queryCallsign(searchInput);
+        } else if (searchInput.includes(',')) {
+          // A comma-separated input preserves the existing multi-QSL-ID search behaviour.
+          const queryResult = queryQsl(searchInput);
+          results = queryResult.results;
+          notFoundItems = queryResult.notFoundItems;
+          searchType = 'qsl';
+        } else {
+          // Unified search: try QSL ID/prefix first, then automatically fall back to callsign.
+          const qslResult = queryQsl(searchInput);
+          if (qslResult.results.length > 0) {
+            results = qslResult.results;
+            searchType = 'qsl';
+          } else {
+            results = queryCallsign(searchInput);
+            searchType = 'callsign';
+            // Preserve the useful QSL-prefix not-found message for inputs that look like card IDs.
+            if (!results.length && /(?:TC|RC)/i.test(searchInput)) {
+              notFoundItems = qslResult.notFoundItems;
+              searchType = 'qsl';
+            }
+          }
+        }
+        displayResults(results, notFoundItems, searchType);
+        if (results.length) {
+          setTimeout(() => document.getElementById('results-summary').scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
+        }
+      } catch (error) {
+        console.error(error);
+        alert(`${t.ALERT_SEARCH}${error.message}`);
+      } finally {
+        loadingIndicator.classList.add('hidden');
+      }
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr || dateStr.length !== 8) return dateStr;
+      return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+    }
+
+    function createStatusBadge(status, dateStr, linkedQslIds, direction) {
+      if (status !== 'Y') return `<span class="text-red-500" aria-label="${TRANSLATIONS[currentLang].NOT_CONFIRMED}" title="${TRANSLATIONS[currentLang].NOT_CONFIRMED}">✖</span>`;
+      const t = TRANSLATIONS[currentLang];
+      const formattedDate = formatDate(dateStr);
+      const isPending = !formattedDate;
+      let displayId = 'N/A';
+      let tooltipContent = '';
+      if (linkedQslIds) {
+        const directionPrefix = direction === 'SENT' ? 'TC' : 'RC';
+        const qslIdList = linkedQslIds.split(',');
+        const relevantQslId = qslIdList.find(id => id.includes(directionPrefix));
+        if (relevantQslId) {
+          const index = relevantQslId.indexOf(directionPrefix);
+          displayId = index !== -1 ? relevantQslId.substring(0, index + directionPrefix.length) : relevantQslId;
+        }
+      }
+      if (displayId !== 'N/A') tooltipContent += `<div class="font-bold">${t.TOOLTIP_QSL_ID} ${displayId}</div>`;
+      if (isPending) {
+        const pendingLabel = direction === 'SENT' ? t.PENDING_OUT_STATUS : t.PENDING_IN_STATUS;
+        tooltipContent += `<div class="${displayId !== 'N/A' ? 'mt-0.5' : ''}">${pendingLabel}</div>`;
+      } else if (formattedDate) {
+        tooltipContent += `<div class="${displayId !== 'N/A' ? 'mt-0.5' : ''}">${t.TOOLTIP_TIME} ${formattedDate}</div>`;
+      }
+      const indicator = isPending
+        ? '<span class="inline-block w-3.5 h-3.5 rounded-full bg-yellow-400 dark:bg-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-800"></span>'
+        : '<span class="text-green-500 font-bold">✔</span>';
+      return `
+        <div class="group status-badge-wrap relative inline-flex justify-center items-center cursor-help" tabindex="0" role="button" aria-label="${direction === 'SENT' ? t.QSL_SENT_DETAIL : t.QSL_RECEIVED_DETAIL}">
+          ${indicator}
+          <div class="status-tooltip invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-300 absolute right-full mr-2 top-1/2 transform -translate-y-1/2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded py-1 px-2 z-50 shadow-lg pointer-events-none border border-gray-700 text-center max-w-min whitespace-nowrap">
+            ${tooltipContent}
+            <div class="absolute left-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-l-gray-900 dark:border-l-gray-700"></div>
+          </div>
+        </div>`;
+    }
+
+    function displayResults(results, notFoundItems, searchType) {
+      const t = TRANSLATIONS[currentLang];
+      updateResultsSummary(results.length);
+      if (results.length === 0) {
+        noResultsMessage.classList.remove('hidden');
+        if (searchType === 'qsl' && notFoundItems && notFoundItems.length > 0) {
+          noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">${t.NOT_FOUND_QSL_PREFIX}</p><p class="font-mono text-red-500 mt-2">${notFoundItems.join(', ')}</p>`;
+        } else {
+          noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">${t.NO_RESULTS}</p>`;
+        }
+        return;
+      }
+
+      noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">${t.NO_RESULTS}</p>`;
+      let html = '';
+      if (searchType === 'callsign') {
+        const columns = t.CALLSIGN_LOG_COLUMNS;
+        const displayCallsign = results[0]?.station_callsign || lastSearch?.input || '';
+        html += `
+          <div class="result-card">
+            <div class="result-card-header"><h3 class="text-lg text-gray-900 dark:text-white">${t.CALLSIGN_RESULT_TITLE(displayCallsign)}</h3><span class="result-count">${t.RECORD_COUNT(results.length)}</span></div>
+            <div class="result-table-wrap"><table class="result-table"><thead><tr>
+              ${columns.map(col => `<th scope="col">${col}</th>`).join('')}
+            </tr></thead><tbody>`;
+        results.forEach(log => {
+          const rcvdStatus = createStatusBadge(log.qsl_rcvd, log.qsl_rcvd_date, log.linked_qsl_ids, 'RCVD');
+          const sentStatus = createStatusBadge(log.qsl_sent, log.qsl_sent_date, log.linked_qsl_ids, 'SENT');
+          html += `
+            <tr>
+              <td data-label="${columns[0]}">${log.qso_date || 'N/A'}</td>
+              <td data-label="${columns[1]}">${log.time_on || 'N/A'}</td>
+              <td data-label="${columns[2]}">${log.freq || 'N/A'}</td>
+              <td data-label="${columns[3]}">${log.band || 'N/A'}</td>
+              <td data-label="${columns[4]}">${log.mode || ''} ${log.submode || ''}</td>
+              <td data-label="${columns[5]}">${log.rst_sent || 'N/A'} / ${log.rst_rcvd || 'N/A'}</td>
+              <td data-label="${columns[6]}" class="comment-cell">${log.comment || ''} ${log.sat_name ? `(${t.SATELLITE_LABEL}: ${log.sat_name})` : ''}</td>
+              <td data-label="${columns[7]}" class="text-center overflow-visible relative">${rcvdStatus}</td>
+              <td data-label="${columns[8]}" class="text-center overflow-visible relative">${sentStatus}</td>
+            </tr>`;
         });
-
-        // --- Theme Toggle Logic ---
-        const applyTheme = (isDark) => {
-            if (isDark) {
-                document.documentElement.classList.add('dark');
-                themeIconLight.classList.remove('hidden');
-                themeIconDark.classList.add('hidden');
-            } else {
-                document.documentElement.classList.remove('dark');
-                themeIconLight.classList.add('hidden');
-                themeIconDark.classList.remove('hidden');
+        html += '</tbody></table></div></div>';
+      } else {
+        const columns = t.QSL_LOG_COLUMNS;
+        const groupedResults = results.reduce((acc, log) => {
+          const key = log.qsl_id || 'unlinked';
+          if (!acc[key]) acc[key] = { direction: log.direction, status: log.status, logs: [] };
+          acc[key].logs.push(log);
+          return acc;
+        }, {});
+        for (const qsl_id in groupedResults) {
+          const card = groupedResults[qsl_id];
+          const isUnlinked = qsl_id === 'unlinked';
+          let directionText = '';
+          let statusCircle = '';
+          if (isUnlinked) {
+            directionText = t.UNLINKED_CARD;
+          } else {
+            const isTC = card.direction === 'TC';
+            const isPending = card.status === 'pending';
+            const status = isTC ? (isPending ? t.PENDING_OUT_STATUS : t.SENT_STATUS) : (isPending ? t.PENDING_IN_STATUS : t.RECEIVED_STATUS);
+            if (isPending) statusCircle = '<span class="inline-block w-2.5 h-2.5 rounded-full bg-yellow-400 dark:bg-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-800"></span>';
+            let dateStr = '';
+            if (card.logs.length > 0) {
+              const log = card.logs[0];
+              dateStr = isTC ? (log.qsl_sent_date || '') : (log.qsl_rcvd_date || '');
             }
-        };
-
-        themeToggle.addEventListener('click', () => {
-            const isDark = document.documentElement.classList.toggle('dark');
-            localStorage.setItem('theme', isDark ? 'dark' : 'light');
-            applyTheme(isDark);
-        });
-
-        const savedTheme = localStorage.getItem('theme');
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        applyTheme(savedTheme === 'dark' || (savedTheme === null && prefersDark));
-
-
-        // --- Database Logic ---
-        async function initDb() {
-            const t = TRANSLATIONS[currentLang];
-            showStatus(t.STATUS_INIT, 'info');
-            searchButton.disabled = true;
-            try {
-                const config = {
-                    locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`
-                };
-                const SQL = await initSqlJs(config);
-                
-                const response = await fetch('qsl_manager.db');
-                if (!response.ok) {
-                    throw new Error(`无法加载数据库文件 (HTTP ${response.status})。请确保 qsl_manager.db 文件与此网页在同一目录下。`);
-                }
-                const fileBuffer = await response.arrayBuffer();
-                db = new SQL.Database(new Uint8Array(fileBuffer));
-                
-                showStatus(t.STATUS_READY, 'success');
-                searchButton.disabled = false;
-            } catch (e) {
-                console.error(e);
-                showStatus(`${t.STATUS_ERROR} ${e.message}`, 'error');
-            }
-        }
-        
-        function showStatus(message, type = 'info') {
-            statusMessage.classList.remove('hidden', 'bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-800', 'dark:text-blue-300', 'bg-green-100', 'dark:bg-green-900/50', 'text-green-800', 'dark:text-green-300', 'bg-red-100', 'dark:bg-red-900/50', 'text-red-800', 'dark:text-red-300');
-            statusText.textContent = message;
-            if (type === 'success') {
-                 statusMessage.classList.add('bg-green-100', 'dark:bg-green-900/50', 'text-green-800', 'dark:text-green-300');
-            } else if (type === 'error') {
-                 statusMessage.classList.add('bg-red-100', 'dark:bg-red-900/50', 'text-red-800', 'dark:text-red-300');
-            } else {
-                 statusMessage.classList.add('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-800', 'dark:text-blue-300');
-            }
-        }
-
-        // --- Search Logic ---
-        // 增加 input 和 type 参数，以便在语言切换时可以重新执行查询
-        async function performSearch(input, type, keepInput = false) {
-            if (!db) {
-                alert('数据库尚未准备就绪，请稍候。');
-                return;
-            }
-            
-            const t = TRANSLATIONS[currentLang];
-            const searchType = type || document.querySelector('input[name="search-type"]:checked').value;
-            // 确保使用传入的 input 或当前输入框的值
-            const searchInput = (input || qslIdInput.value).trim().toUpperCase();
-
-            if (!searchInput) return;
-
-            loadingIndicator.classList.remove('hidden');
-            resultsArea.innerHTML = '';
-            noResultsMessage.classList.add('hidden');
-            
-            await new Promise(resolve => setTimeout(resolve, 50));
-
-            try {
-                let results = [];
-                let notFoundItems = [];
-
-                if (searchType === 'qsl') {
-                    const searchTerms = searchInput.split(',').map(s => s.trim()).filter(s => s);
-                    if(searchTerms.length === 0) {
-                        loadingIndicator.classList.add('hidden');
-                        return;
-                    }
-                    
-                    const whereConditions = searchTerms.map(() => "UPPER(q.qsl_id) LIKE ?").join(' OR ');
-                    
-                    const query = `
-                        SELECT q.qsl_id, q.direction, q.status, l.*
-                        FROM qsl_cards q
-                        JOIN qsl_log_link ql ON q.qsl_id = ql.qsl_id
-                        JOIN logs l ON ql.log_id = l.id
-                        WHERE ${whereConditions}
-                        ORDER BY q.qsl_id, l.qso_date DESC, l.time_on DESC;
-                    `;
-                    
-                    const stmt = db.prepare(query);
-                    
-                    const bindParams = searchTerms.map(term => term + '%');
-                    stmt.bind(bindParams);
-                    
-                    while (stmt.step()) results.push(stmt.getAsObject());
-                    stmt.free();
-                    
-                    const foundQslIds = results.map(r => r.qsl_id.toUpperCase());
-                    notFoundItems = searchTerms.filter(term => {
-                        return !foundQslIds.some(foundId => foundId.startsWith(term));
-                    });
-
-                } else if (searchType === 'callsign') {
-                    // --- 呼号模糊搜索逻辑修改 ---
-                    // 1. 提取基准呼号 (Base Callsign)
-                    let baseCallsign = searchInput;
-                    const slashIndex = searchInput.indexOf('/');
-                    if (slashIndex !== -1) {
-                        baseCallsign = searchInput.substring(0, slashIndex);
-                    }
-                    
-                    const query = `
-                        SELECT 
-                            l.*, 
-                            GROUP_CONCAT(q.qsl_id) AS linked_qsl_ids 
-                        FROM 
-                            logs l
-                        LEFT JOIN 
-                            qsl_log_link ql ON l.id = ql.log_id
-                        LEFT JOIN
-                            qsl_cards q ON ql.qsl_id = q.qsl_id
-                        WHERE 
-                            -- 匹配基准呼号本身 (如: JE6WUD)
-                            UPPER(l.station_callsign) = UPPER(?) 
-                            -- 匹配所有带斜线后缀的呼号 (如: JE6WUD/4, JE6WUD/P)
-                            OR UPPER(l.station_callsign) LIKE UPPER(? || '/%')
-                        GROUP BY
-                            l.id
-                        ORDER BY 
-                            l.qso_date DESC, l.time_on DESC;
-                    `;
-                    const stmt = db.prepare(query);
-                    // 绑定两次基准呼号
-                    stmt.bind([baseCallsign, baseCallsign]);
-                    while (stmt.step()) results.push(stmt.getAsObject());
-                    stmt.free();
-                }
-
-                displayResults(results, notFoundItems, searchType);
-
-            } catch (e) {
-                console.error(e);
-                alert(`${t.SEARCH_BUTTON}时发生错误: ${e.message}`);
-            } finally {
-                loadingIndicator.classList.add('hidden');
-                if (!keepInput) {
-                     qslIdInput.value = ''; // 清空输入框，除非 keepInput 为 true (用于语言切换)
-                }
-            }
-        }
-
-        // --- Helper Function: Format YYYYMMDD to YYYY-MM-DD ---
-        function formatDate(dateStr) {
-            if (!dateStr || dateStr.length !== 8) return dateStr;
-            return `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
-        }
-
-        // --- Helper Function: Create Status Badge with Tooltip (Enhanced for Callsign Search) ---
-        function createStatusBadge(status, dateStr, linkedQslIds, direction) {
-            if (status !== 'Y') {
-                return '<span class="text-red-500">✖</span>';
-            }
-
-            const t = TRANSLATIONS[currentLang];
             const formattedDate = formatDate(dateStr);
-            // 已发/已收但没有日期，说明卡片已分配但尚未出入库（待出库/待入库）
-            const isPending = !formattedDate;
-
-            let displayId = 'N/A';
-            let tooltipContent = '';
-
-            // 仅在有 QSL ID 关联时处理
-            if (linkedQslIds) {
-                const directionPrefix = direction === 'SENT' ? 'TC' : 'RC';
-                const qslIdList = linkedQslIds.split(',');
-                
-                let relevantQslId = qslIdList.find(id => id.includes(directionPrefix));
-
-                if (relevantQslId) {
-                    const index = relevantQslId.indexOf(directionPrefix);
-                    if (index !== -1) {
-                        // 截取到 TC/RC 结束，排除后面的唯一哈希码
-                        displayId = relevantQslId.substring(0, index + directionPrefix.length);
-                    } else {
-                        // 兜底：如果格式不匹配，直接使用完整ID
-                        displayId = relevantQslId;
-                    }
-                }
-            }
-            
-            // 构造气泡文本为两行 <div> 元素
-            if (displayId !== 'N/A') {
-                tooltipContent += `<div class="font-bold">${t.TOOLTIP_QSL_ID} ${displayId}</div>`;
-            }
-            if (isPending) {
-                // 待出库/待入库：显示状态标签，而非（不存在的）时间
-                const pendingLabel = direction === 'SENT' ? t.PENDING_OUT_STATUS : t.PENDING_IN_STATUS;
-                const mtClass = displayId !== 'N/A' ? 'mt-0.5' : '';
-                tooltipContent += `<div class="${mtClass}">${pendingLabel}</div>`;
-            } else if (formattedDate) {
-                // 如果 QSL ID 存在，添加一个微小的上边距分隔两行
-                const mtClass = displayId !== 'N/A' ? 'mt-0.5' : '';
-                tooltipContent += `<div class="${mtClass}">${t.TOOLTIP_TIME} ${formattedDate}</div>`;
-            }
-
-            // 待出库/待入库：黄色圆圈；已发出/已收到：绿色对勾
-            const indicator = isPending
-                ? '<span class="inline-block w-3.5 h-3.5 rounded-full bg-yellow-400 dark:bg-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-800"></span>'
-                : '<span class="text-green-500 font-bold">✔</span>';
-
-            return `
-                <div class="group relative inline-flex justify-center items-center cursor-help">
-                    ${indicator}
-                    <div class="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-300 absolute right-full mr-2 top-1/2 transform -translate-y-1/2 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded py-1 px-2 z-50 shadow-lg pointer-events-none border border-gray-700 text-center max-w-min">
-                        ${tooltipContent}
-                        <div class="absolute left-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-l-gray-900 dark:border-l-gray-700"></div>
-                    </div>
-                </div>
-            `;
+            directionText = formattedDate ? `${formattedDate} - ${status}` : status;
+          }
+          const directionColor = isUnlinked
+            ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300'
+            : (card.status === 'pending'
+              ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
+              : (card.direction === 'TC'
+                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
+                : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'));
+          html += `
+            <div class="result-card">
+              <div class="result-card-header">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${isUnlinked ? t.UNLINKED_CARD : qsl_id}</h3>
+                <span class="text-xs font-medium px-2.5 py-1 rounded-full inline-flex items-center gap-2 ${directionColor}">${statusCircle}${directionText}</span>
+                <span class="result-count">${t.QSO_COUNT(card.logs.length)}</span>
+              </div>
+              <div class="result-table-wrap"><table class="result-table"><thead><tr>
+                ${columns.map(col => `<th scope="col">${col}</th>`).join('')}
+              </tr></thead><tbody>`;
+          card.logs.forEach(log => {
+            html += `
+              <tr>
+                <td data-label="${columns[0]}">${log.station_callsign || 'N/A'}</td>
+                <td data-label="${columns[1]}">${log.qso_date || 'N/A'}</td>
+                <td data-label="${columns[2]}">${log.time_on || 'N/A'}</td>
+                <td data-label="${columns[3]}">${log.freq || 'N/A'}</td>
+                <td data-label="${columns[4]}">${log.band || 'N/A'}</td>
+                <td data-label="${columns[5]}">${log.mode || ''} ${log.submode || ''}</td>
+                <td data-label="${columns[6]}">${log.rst_sent || 'N/A'} / ${log.rst_rcvd || 'N/A'}</td>
+                <td data-label="${columns[7]}" class="comment-cell">${log.comment || ''} ${log.sat_name ? `(${t.SATELLITE_LABEL}: ${log.sat_name})` : ''}</td>
+              </tr>`;
+          });
+          html += '</tbody></table></div></div>';
         }
-
-
-        function displayResults(results, notFoundItems, searchType) {
-            const t = TRANSLATIONS[currentLang];
-
-            if (results.length === 0) {
-                noResultsMessage.classList.remove('hidden');
-                if (searchType === 'qsl' && notFoundItems && notFoundItems.length > 0) {
-                    noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">${t.NOT_FOUND_QSL_PREFIX}</p><p class="font-mono text-red-500 mt-2">${notFoundItems.join(', ')}</p>`;
-                } else {
-                    noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">${t.NO_RESULTS}</p>`;
-                }
-                return;
-            }
-            
-            noResultsMessage.innerHTML = `<p class="text-gray-500 dark:text-gray-400">${t.NO_RESULTS}</p>`; // Reset to default message
-
-            let html = '';
-
-            if (searchType === 'callsign') {
-                const columns = t.CALLSIGN_LOG_COLUMNS;
-                
-                // 使用实际查询到的呼号作为标题
-                const displayCallsign = results.length > 0 ? results[0].station_callsign : qslIdInput.value.trim().toUpperCase();
-
-                html += `
-                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-                        <div class="p-4 sm:p-6 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${t.CALLSIGN_RESULT_TITLE(displayCallsign)}</h3>
-                        </div>
-                        <div class="overflow-x-auto pb-4">
-                            <table class="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
-                                <thead class="bg-gray-50 dark:bg-gray-700/80">
-                                    <tr>
-                                        ${columns.map(col => `<th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">${col}</th>`).join('')}
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                `;
-                results.forEach((log, index) => {
-                    const rowClass = index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50';
-                    
-                    const rcvdStatus = createStatusBadge(log.qsl_rcvd, log.qsl_rcvd_date, log.linked_qsl_ids, 'RCVD');
-                    const sentStatus = createStatusBadge(log.qsl_sent, log.qsl_sent_date, log.linked_qsl_ids, 'SENT');
-
-                    html += `
-                        <tr class="${rowClass}">
-                            <td>${log.qso_date || 'N/A'}</td>
-                            <td>${log.time_on || 'N/A'}</td>
-                            <td>${log.freq || 'N/A'}</td>
-                            <td>${log.band || 'N/A'}</td>
-                            <td>${log.mode || ''} ${log.submode || ''}</td>
-                            <td>${log.rst_sent || 'N/A'} / ${log.rst_rcvd || 'N/A'}</td>
-                            <td class="whitespace-normal break-words max-w-xs">${log.comment || ''} ${log.sat_name ? `(卫星: ${log.sat_name})` : ''}</td>
-                            <td class="text-center overflow-visible relative">${rcvdStatus}</td>
-                            <td class="text-center overflow-visible relative">${sentStatus}</td>
-                        </tr>
-                    `;
-                });
-                html += `</tbody></table></div></div>`;
-            } else { // 'qsl' search type (QSL ID search - logic from previous turn)
-                const columns = t.QSL_LOG_COLUMNS;
-                
-                const groupedResults = results.reduce((acc, log) => {
-                    const key = log.qsl_id || 'unlinked';
-                    if (!acc[key]) {
-                        acc[key] = {
-                            direction: log.direction,
-                            status: log.status,
-                            logs: []
-                        };
-                    }
-                    acc[key].logs.push(log);
-                    return acc;
-                }, {});
-
-                for (const qsl_id in groupedResults) {
-                    const card = groupedResults[qsl_id];
-                    const isUnlinked = qsl_id === 'unlinked';
-                    
-                    let directionText = '';
-                    let statusCircle = '';
-                    if (isUnlinked) {
-                        directionText = t.UNLINKED_CARD;
-                    } else {
-                        const isTC = card.direction === 'TC';
-                        const isPending = card.status === 'pending';
-                        const status = isTC
-                            ? (isPending ? t.PENDING_OUT_STATUS : t.SENT_STATUS)
-                            : (isPending ? t.PENDING_IN_STATUS : t.RECEIVED_STATUS);
-
-                        // 发卡待出库（收卡待入库）状态显示黄色圆圈
-                        if (isPending) {
-                            statusCircle = '<span class="inline-block w-2.5 h-2.5 rounded-full bg-yellow-400 dark:bg-yellow-500 ring-2 ring-yellow-200 dark:ring-yellow-800"></span>';
-                        }
-
-                        let dateStr = '';
-                        if (card.logs && card.logs.length > 0) {
-                             const log = card.logs[0];
-                             dateStr = isTC ? (log.qsl_sent_date || '') : (log.qsl_rcvd_date || '');
-                        }
-                        
-                        const formattedDate = formatDate(dateStr);
-                        if (formattedDate) {
-                            directionText = `${formattedDate} - ${status}`;
-                        } else {
-                            directionText = status;
-                        }
-                    }
-
-                    const directionColor = isUnlinked
-                        ? 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300'
-                        : (card.status === 'pending'
-                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
-                            : (card.direction === 'TC'
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
-                                : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'));
-
-                    html += `
-                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-                            <div class="p-4 sm:p-6 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
-                                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${isUnlinked ? t.UNLINKED_CARD : qsl_id}</h3>
-                                <span class="text-xs font-medium px-2.5 py-0.5 rounded inline-flex items-center gap-1.5 ${directionColor}">${statusCircle}${directionText}</span>
-                            </div>
-                            <div class="overflow-x-auto">
-                                <table class="divide-y divide-gray-200 dark:divide-gray-700 min-w-full">
-                                    <thead class="bg-gray-50 dark:bg-gray-700/80">
-                                        <tr>
-                                            ${columns.map(col => `<th scope="col" class="text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">${col}</th>`).join('')}
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                    `;
-
-                    card.logs.forEach((log, index) => {
-                        const rowClass = index % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50';
-                        html += `
-                            <tr class="${rowClass}">
-                                <td>${log.station_callsign || 'N/A'}</td>
-                                <td>${log.qso_date || 'N/A'}</td>
-                                <td>${log.time_on || 'N/A'}</td>
-                                <td>${log.freq || 'N/A'}</td>
-                                <td>${log.band || 'N/A'}</td>
-                                <td>${log.mode || ''} ${log.submode || ''}</td>
-                                <td>${log.rst_sent || 'N/A'} / ${log.rst_rcvd || 'N/A'}</td>
-                                <td class="whitespace-normal break-words max-w-xs">${log.comment || ''} ${log.sat_name ? `(卫星: ${log.sat_name})` : ''}</td>
-                            </tr>
-                        `;
-                    });
-
-                    html += `
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                if (notFoundItems && notFoundItems.length > 0) {
-                    html += `
-                        <div class="mt-8 p-4 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
-                            <p class="font-semibold text-yellow-800 dark:text-yellow-300">${t.QSL_NOT_FOUND_INFO}</p>
-                            <p class="font-mono text-yellow-700 dark:text-yellow-400 mt-1">${notFoundItems.join(', ')}</p>
-                        </div>
-                    `;
-                }
-            }
-            resultsArea.innerHTML = html;
+        if (notFoundItems && notFoundItems.length > 0) {
+          html += `<div class="mt-2 p-4 bg-yellow-50 dark:bg-yellow-900/30 rounded-xl"><p class="font-semibold text-yellow-800 dark:text-yellow-300">${t.QSL_NOT_FOUND_INFO}</p><p class="font-mono text-yellow-700 dark:text-yellow-400 mt-1">${notFoundItems.join(', ')}</p></div>`;
         }
+      }
+      resultsArea.innerHTML = html;
+    }
 
-        searchButton.addEventListener('click', () => performSearch());
-        qslIdInput.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') {
-                performSearch();
-            }
-        });
-        
-        searchTypeRadios.forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                const t = TRANSLATIONS[currentLang];
-                if (e.target.value === 'qsl') {
-                    qslIdInput.placeholder = t.PLACEHOLDER_QSL;
-                } else {
-                    qslIdInput.placeholder = t.PLACEHOLDER_CALLSIGN;
-                }
-                qslIdInput.value = ''; // 清空输入框
-            });
-        });
+    document.getElementById('search-form').addEventListener('submit', event => {
+      event.preventDefault();
+      performSearch(qslIdInput.value, 'auto');
+    });
+    qslIdInput.addEventListener('input', () => {
+      clearButton.classList.toggle('visible', qslIdInput.value.length > 0);
+    });
+    clearButton.addEventListener('click', () => {
+      qslIdInput.value = '';
+      clearButton.classList.remove('visible');
+      qslIdInput.focus();
+    });
 
-        document.addEventListener('DOMContentLoaded', async () => {
-            // 1. 初始化语言设置
-            const savedLang = localStorage.getItem('lang');
-            const initialLang = (savedLang === 'zh' || savedLang === 'en') ? savedLang : 'zh';
-            updateContent(initialLang);
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const savedLang = getStoredSetting('lang');
+        const initialLang = savedLang === 'zh' || savedLang === 'en' ? savedLang : 'zh';
+        updateContent(initialLang, false);
+      } catch (error) {
+        console.error('QSL page initialization warning:', error);
+      }
+      await initDb();
 
-            // 2. 初始化数据库
-            await initDb();
-            
-            // 3. 处理 URL 查询参数
-            const urlParams = new URLSearchParams(window.location.search);
-            const qslQuery = urlParams.get('q');
-            const callsignQuery = urlParams.get('c');
-
-            if (qslQuery) {
-                document.querySelector('input[name="search-type"][value="qsl"]').checked = true;
-                qslIdInput.value = qslQuery;
-                await performSearch(qslQuery, 'qsl');
-                history.pushState(null, '', window.location.pathname);
-            } else if (callsignQuery) {
-                document.querySelector('input[name="search-type"][value="callsign"]').checked = true;
-                qslIdInput.value = callsignQuery;
-                await performSearch(callsignQuery, 'callsign');
-                history.pushState(null, '', window.location.pathname);
-            }
-        });
-
-    </script>
+      // Backward compatibility: old shared links keep their distinct query semantics.
+      const urlParams = new URLSearchParams(window.location.search);
+      const qslQuery = urlParams.get('q');
+      const callsignQuery = urlParams.get('c');
+      if (qslQuery) {
+        qslIdInput.value = qslQuery;
+        clearButton.classList.add('visible');
+        await performSearch(qslQuery, 'qsl', true);
+        history.pushState(null, '', window.location.pathname);
+      } else if (callsignQuery) {
+        qslIdInput.value = callsignQuery;
+        clearButton.classList.add('visible');
+        await performSearch(callsignQuery, 'callsign', true);
+        history.pushState(null, '', window.location.pathname);
+      }
+    });
+  </script>
 </body>
 </html>
